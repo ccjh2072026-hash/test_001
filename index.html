@@ -50,119 +50,8 @@
   <!-- React root container -->
   <div id="root"></div>
   <script type="text/babel">
-    const { useState, useEffect, useMemo } = React;
-    const INITIAL_RESERVATIONS = [
-      {
-        id: "r1",
-        email: "ccjh2072015@ccjh.ntpc.edu.tw",
-        teacher: "何呂升",
-        purpose: "領域教學",
-        date: "2026-07-20",
-        grade: "9成功",
-        sessions: ["第一節", "第二節"],
-        tabletCode: "(S)-I(1-30)"
-      },
-      {
-        id: "r1_1",
-        email: "ccjh2072015@ccjh.ntpc.edu.tw",
-        teacher: "何呂升",
-        purpose: "領域教學",
-        date: "2026-07-20",
-        grade: "9精進",
-        sessions: ["第三節", "第四節"],
-        tabletCode: "(S)-I(1-30)"
-      },
-      {
-        id: "r2",
-        email: "tc.chu@ccjh.ntpc.edu.tw",
-        teacher: "卓純琦",
-        purpose: "其他",
-        date: "2026-08-10",
-        grade: "閱讀營課程（視聽一）",
-        sessions: ["第一節", "第二節", "第三節", "第四節"],
-        tabletCode: "(S)-K(1-30)"
-      },
-      {
-        id: "r3",
-        email: "tc.chu@ccjh.ntpc.edu.tw",
-        teacher: "卓純琦",
-        purpose: "其他",
-        date: "2026-08-11",
-        grade: "閱讀營課程（視聽一）",
-        sessions: ["第一節", "第二節", "第三節", "第四節"],
-        tabletCode: "(S)-K(1-30)"
-      },
-      {
-        id: "r4",
-        email: "chen.mc@ccjh.ntpc.edu.tw",
-        teacher: "陳明秋",
-        purpose: "領域教學",
-        date: "2026-07-20",
-        grade: "806教室",
-        sessions: ["第一節", "第二節"],
-        tabletCode: "(S)-M(1-30)"
-      },
-      {
-        id: "r5",
-        email: "lin.yp@ccjh.ntpc.edu.tw",
-        teacher: "林怡平",
-        purpose: "領域教學",
-        date: "2026-07-21",
-        grade: "806教室",
-        sessions: ["第一節"],
-        tabletCode: "(S)-N(1-30)"
-      },
-      {
-        id: "r6",
-        email: "lin.yp@ccjh.ntpc.edu.tw",
-        teacher: "林怡平",
-        purpose: "領域教學",
-        date: "2026-08-04",
-        grade: "8合國文",
-        sessions: ["第一節", "第二節"],
-        tabletCode: "(S)-N(1-30)"
-      },
-      {
-        id: "r7",
-        email: "lin.yp@ccjh.ntpc.edu.tw",
-        teacher: "林怡平",
-        purpose: "領域教學",
-        date: "2026-08-05",
-        grade: "8合國文",
-        sessions: ["第三節", "第四節"],
-        tabletCode: "(S)-N(1-30)"
-      },
-      {
-        id: "r8",
-        email: "lin.yp@ccjh.ntpc.edu.tw",
-        teacher: "林怡平",
-        purpose: "領域教學",
-        date: "2026-08-07",
-        grade: "8合國文",
-        sessions: ["第三節", "第四節"],
-        tabletCode: "(S)-N(1-30)"
-      },
-      {
-        id: "r9",
-        email: "chien.cm@ccjh.ntpc.edu.tw",
-        teacher: "簡志勉",
-        purpose: "領域教學",
-        date: "2026-07-20",
-        grade: "806教室",
-        sessions: ["第三節", "第四節"],
-        tabletCode: "(S)-O(1-30)"
-      },
-      {
-        id: "r10",
-        email: "lin.yh@ccjh.ntpc.edu.tw",
-        teacher: "林逸煦",
-        purpose: "領域教學",
-        date: "2026-07-20",
-        grade: "七合",
-        sessions: ["第一節", "第二節"],
-        tabletCode: "(S)-G(1-30)"
-      }
-    ];
+    const { useState, useEffect, useMemo, useCallback } = React;
+    const INITIAL_RESERVATIONS = [];
     const SESSIONS = [
       { name: "早自習", time: "7:30-8:10", group: "morning", bg: "bg-purple-50", text: "text-purple-700", border: "border-purple-200", classId: "morning", reservable: false },
       { name: "第一節", time: "8:15-9:00", group: "am", bg: "bg-blue-50/70", text: "text-blue-700", border: "border-blue-200", classId: "am", reservable: true },
@@ -199,11 +88,12 @@
     }
 
     function App() {
-      const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxIMtAIFllzJBmJo6omk51RogyrGcY9NWfb7fQ-zliylPlN-X8Vajat3bUF36XGLGMX9w/exec";
+      const GAS_API_URL = "https://script.google.com/macros/s/AKfycbz3NoQ36Eo9ok1WlF-IuyAq_enGXehfjsPSr_mxwdV7vR3wS3DcSOTS7UC2SpK2xK7dkQ/exec";
       const [reservations, setReservations] = useState(() => {
         const saved = localStorage.getItem("ccjh_tablet_reservations_v6");
         return saved ? JSON.parse(saved) : INITIAL_RESERVATIONS;
       });
+      const [isLoading, setIsLoading] = useState(false);
       const [systemTitle, setSystemTitle] = useState(() => {
         const saved = localStorage.getItem("ccjh_tablet_system_title_v6");
         return saved ? saved : "142-1151學年度暑期校內平板臨時借用預約";
@@ -258,6 +148,54 @@
       const [wordCustomStart, setWordCustomStart] = useState("2026-07-20");
       const [wordCustomEnd, setWordCustomEnd] = useState("2026-07-25");
 
+      const showNotification = useCallback((message, type = "success") => {
+        setNotification({ message, type });
+        setTimeout(() => setNotification(null), 4000);
+      }, []);
+
+      // 讀取 Google Apps Script (GAS) 預約資料紀錄
+      const fetchReservationsFromGAS = useCallback(async () => {
+        setIsLoading(true);
+        try {
+          const res = await fetch(GAS_API_URL);
+          if (!res.ok) throw new Error("網路回應錯誤");
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            // 轉換為標準格式
+            const formatted = data.map((item, idx) => ({
+              id: item.id || `gas_${idx}_${Date.now()}`,
+              email: item.email || item['電子郵件'] || '',
+              teacher: item.teacher || item['借用教師姓名'] || item['借用人'] || '',
+              purpose: item.purpose || item['用途'] || '領域教學',
+              date: item.date || item['借用日期'] || '',
+              grade: item.grade || item['使用年級班級'] || item['班級'] || '',
+              sessions: Array.isArray(item.sessions) 
+                ? item.sessions 
+                : (typeof item.sessions === 'string' ? item.sessions.split(',').map(s => s.trim()) : []),
+              tabletCode: item.tabletCode || item['指派平板編號'] || ''
+            }));
+            setReservations(formatted);
+          }
+        } catch (err) {
+          console.error("讀取 GAS 資料失敗:", err);
+          showNotification("讀取線上預約紀錄失敗，已使用快取資料。", "error");
+        } finally {
+          setIsLoading(false);
+        }
+      }, [GAS_API_URL, showNotification]);
+
+      // 【新增】開啟網頁時即自動讀取 GAS 預約紀錄並重新統計顯示
+      useEffect(() => {
+        fetchReservationsFromGAS();
+      }, [fetchReservationsFromGAS]);
+
+      // 切換至預約明細紀錄表或課表時，自動載入試算表紀錄
+      useEffect(() => {
+        if (activeTab === "list" || activeTab === "timetable") {
+          fetchReservationsFromGAS();
+        }
+      }, [activeTab, fetchReservationsFromGAS]);
+
       useEffect(() => {
         localStorage.setItem("ccjh_tablet_reservations_v6", JSON.stringify(reservations));
       }, [reservations]);
@@ -278,11 +216,6 @@
       useEffect(() => {
         localStorage.setItem("ccjh_tablet_semester_end_v6", semesterEnd);
       }, [semesterEnd]);
-
-      const showNotification = (message, type = "success") => {
-        setNotification({ message, type });
-        setTimeout(() => setNotification(null), 4000);
-      };
 
       const currentWeekDays = useMemo(() => {
         return Array.from({ length: 6 }).map((_, i) => {
@@ -353,7 +286,6 @@
         showNotification(`已預填借用日期：${dateStr} 與 使用節次：${sessionName}！`, "info");
       };
 
-      // 修正 1：加上 async 關鍵字，並清理後續重複出現的多餘邏輯
       const handleSubmit = async (e) => {
         e.preventDefault();
         
@@ -454,16 +386,41 @@
         setTempTabletCode(res.tabletCode || "");
       };
 
-      const saveTabletAssign = () => {
-        if (tabletAssignModal) {
+      const saveTabletAssign = async () => {
+        if (!tabletAssignModal) return;
+
+        const updatedRecord = {
+          ...tabletAssignModal,
+          tabletCode: tempTabletCode,
+          action: "updateTabletCode" // 新增 action 欄位供 GAS 判斷為「更新」而非「新增」
+        };
+
+        showNotification("平板編號更新中，請稍候...", "info");
+
+        try {
+          // 發送 POST 請求至 GAS API 更新該筆資料
+          await fetch(GAS_API_URL, {
+            method: "POST",
+            mode: "no-cors",
+            headers: {
+              "Content-Type": "text/plain;charset=utf-8"
+            },
+            body: JSON.stringify(updatedRecord)
+          });
+
+          // 更新前端 React 狀態
           setReservations(prev => prev.map(r => {
             if (r.id === tabletAssignModal.id) {
               return { ...r, tabletCode: tempTabletCode };
             }
             return r;
           }));
+
           showNotification(`成功指派平板編號為: ${tempTabletCode || '未指派'}`);
           setTabletAssignModal(null);
+        } catch (error) {
+          console.error("同步 GAS 平板編號失敗:", error);
+          showNotification("連線 Google 服務失敗，請檢查網路或稍後再試！", "error");
         }
       };
 
@@ -688,6 +645,7 @@
         showNotification("平板課表 Word 文件 (.doc) 產生並下載成功！可在 Microsoft Word 或 Google Docs 完美相容開啟。");
       };
 
+      // 重新計算統計數據 (總借用次數與未指派平板數量)
       const stats = useMemo(() => {
         const total = reservations.length;
         const unassigned = reservations.filter(r => !r.tabletCode || r.tabletCode.trim() === "").length;
@@ -701,12 +659,11 @@
         return { total, unassigned, upcoming, activeTeacher };
       }, [reservations]);
 
-      // 修正 2：補上依賴陣列 [] 避免重複被呼叫執行
       useEffect(() => {
         if (window.lucide) {
           window.lucide.createIcons();
         }
-      }, []);
+      }, [activeTab, isLoading, reservations]);
 
       return (
         <div className="min-h-screen flex flex-col">
@@ -884,7 +841,9 @@
                 </div>
                 <div>
                   <p className="text-xs text-slate-500">總平板預約借用次數</p>
-                  <p className="text-xl font-bold text-slate-800">{stats.total} 筆紀錄</p>
+                  <p className="text-xl font-bold text-slate-800">
+                    {isLoading ? "讀取中..." : `${stats.total} 筆紀錄`}
+                  </p>
                 </div>
               </div>
               <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
@@ -893,7 +852,9 @@
                 </div>
                 <div>
                   <p className="text-xs text-slate-500">未指派平板編號</p>
-                  <p className="text-xl font-bold text-red-600">{stats.unassigned} 筆待指派</p>
+                  <p className="text-xl font-bold text-red-600">
+                    {isLoading ? "讀取中..." : `${stats.unassigned} 筆待指派`}
+                  </p>
                 </div>
               </div>
               <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
@@ -1170,6 +1131,15 @@
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2.5">
+                    <button
+                      onClick={fetchReservationsFromGAS}
+                      disabled={isLoading}
+                      className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition shadow-sm"
+                      title="重新整理資料"
+                    >
+                      <i data-lucide="refresh-cw" className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`}></i>
+                      重新整理
+                    </button>
                     {isAdmin ? (
                       <button
                         onClick={handleCsvExport}
@@ -1230,7 +1200,16 @@
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 text-sm">
-                      {filteredReservations.length > 0 ? (
+                      {isLoading ? (
+                        <tr>
+                          <td colSpan="7" className="p-12 text-center text-slate-500">
+                            <div className="flex flex-col items-center justify-center gap-2">
+                              <i data-lucide="loader-2" className="w-8 h-8 animate-spin text-indigo-600"></i>
+                              <p className="text-sm font-medium">資料載入中，請稍候...</p>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : filteredReservations.length > 0 ? (
                         filteredReservations.map((res, idx) => {
                           let purposeBadge = "bg-indigo-50 text-indigo-700 border-indigo-200";
                           if (res.purpose === "研習") purposeBadge = "bg-amber-50 text-amber-700 border-amber-200";

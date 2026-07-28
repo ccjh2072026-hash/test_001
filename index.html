@@ -88,12 +88,16 @@
     }
 
     function App() {
-      const GAS_API_URL = "https://script.google.com/macros/s/AKfycbz3NoQ36Eo9ok1WlF-IuyAq_enGXehfjsPSr_mxwdV7vR3wS3DcSOTS7UC2SpK2xK7dkQ/exec";
+      // 後端 API 路徑設定
+      const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzW_pWfZ98esw52a1c3I0a91qaK8oyxdA_dOO8B8S5ZD46BUVeEfYLwTlpOGayVjPcl_A/exec";
+      const ADMIN_AUTH_URL = "https://script.google.com/macros/s/AKfycbw-b5R_dfCj7aZgDTqT4C7o1crFFPIvRP3SdpLG9A_vqhGpMh2t5NRsqDD5FYmQ1o53/exec";
+
       const [reservations, setReservations] = useState(() => {
         const saved = localStorage.getItem("ccjh_tablet_reservations_v6");
         return saved ? JSON.parse(saved) : INITIAL_RESERVATIONS;
       });
       const [isLoading, setIsLoading] = useState(false);
+      const [isAuthLoading, setIsAuthLoading] = useState(false);
       const [systemTitle, setSystemTitle] = useState(() => {
         const saved = localStorage.getItem("ccjh_tablet_system_title_v6");
         return saved ? saved : "142-1151學年度暑期校內平板臨時借用預約";
@@ -126,11 +130,12 @@
       const [selectedWeekStart, setSelectedWeekStart] = useState(() => getMonday(new Date(DEFAULT_DATE_STR)));
       const [searchTerm, setSearchTerm] = useState("");
       const [filterPurpose, setFilterPurpose] = useState("全部");
+      
       const [formData, setFormData] = useState({
         email: "",
         teacher: "",
         purpose: "領域教學",
-        date: DEFAULT_DATE_STR,
+        date: formatDate(new Date()),
         grade: "",
         sessions: [],
         tabletCode: ""
@@ -161,7 +166,6 @@
           if (!res.ok) throw new Error("網路回應錯誤");
           const data = await res.json();
           if (Array.isArray(data)) {
-            // 轉換為標準格式
             const formatted = data.map((item, idx) => ({
               id: item.id || `gas_${idx}_${Date.now()}`,
               email: item.email || item['電子郵件'] || '',
@@ -184,12 +188,10 @@
         }
       }, [GAS_API_URL, showNotification]);
 
-      // 【新增】開啟網頁時即自動讀取 GAS 預約紀錄並重新統計顯示
       useEffect(() => {
         fetchReservationsFromGAS();
       }, [fetchReservationsFromGAS]);
 
-      // 切換至預約明細紀錄表或課表時，自動載入試算表紀錄
       useEffect(() => {
         if (activeTab === "list" || activeTab === "timetable") {
           fetchReservationsFromGAS();
@@ -272,6 +274,44 @@
         return null;
       }, [formData.date, formData.sessions, reservations]);
 
+      // 計算在目前彈出的指派視窗中，同一時段已被使用的平板編號集合
+      const occupiedTabletCodes = useMemo(() => {
+        if (!tabletAssignModal) return new Set();
+        const occupied = new Set();
+        reservations.forEach(r => {
+          // 排除當前正在編輯的這筆紀錄
+          if (r.id === tabletAssignModal.id) return;
+          // 比對日期是否相同
+          if (r.date === tabletAssignModal.date) {
+            // 比對是否有重疊的節次
+            const hasOverlappingSession = r.sessions.some(s => tabletAssignModal.sessions.includes(s));
+            if (hasOverlappingSession && r.tabletCode) {
+              // 將已指派的字串拆解為單一編號
+              const codes = r.tabletCode.split(',').map(c => c.trim()).filter(Boolean);
+              codes.forEach(c => occupied.add(c));
+            }
+          }
+        });
+        return occupied;
+      }, [tabletAssignModal, reservations]);
+
+      // 切換平板選擇 (多選邏輯)
+      const toggleTabletCodeSelect = (code) => {
+        if (occupiedTabletCodes.has(code)) return; // 若已被指派則不可選擇
+
+        let currentCodes = tempTabletCode
+          .split(',')
+          .map(c => c.trim())
+          .filter(Boolean);
+
+        if (currentCodes.includes(code)) {
+          currentCodes = currentCodes.filter(c => c !== code);
+        } else {
+          currentCodes.push(code);
+        }
+        setTempTabletCode(currentCodes.join(', '));
+      };
+
       const handleQuickBook = (dateStr, sessionName) => {
         if (new Date(dateStr) < new Date(semesterStart) || new Date(dateStr) > new Date(semesterEnd)) {
           showNotification(`該日期不在目前設定的學期預約範圍內 (${semesterStart} ~ ${semesterEnd})！`, "error");
@@ -338,16 +378,44 @@
         }
       };
 
-      const handleLoginSubmit = (e) => {
+      const handleLoginSubmit = async (e) => {
         e.preventDefault();
-        if (loginUser.trim() === "admin" && loginPass === "admin123") {
-          setIsAdmin(true);
-          setShowLoginModal(false);
-          setLoginUser("");
-          setLoginPass("");
-          showNotification("管理員登入成功！已啟用設備指派與系統設定權限。", "success");
-        } else {
-          setLoginError("帳號或密碼錯誤！請重新確認。");
+        if (!loginUser.trim() || !loginPass.trim()) {
+          setLoginError("請輸入帳號與密碼！");
+          return;
+        }
+
+        setIsAuthLoading(true);
+        setLoginError("");
+
+        try {
+          const response = await fetch(ADMIN_AUTH_URL, {
+            method: "POST",
+            headers: {
+              "Content-Type": "text/plain;charset=utf-8"
+            },
+            body: JSON.stringify({
+              username: loginUser.trim(),
+              password: loginPass.trim()
+            })
+          });
+
+          const result = await response.json();
+
+          if (result.success || result.status === "success" || result.authenticated) {
+            setIsAdmin(true);
+            setShowLoginModal(false);
+            setLoginUser("");
+            setLoginPass("");
+            showNotification("管理員登入成功！已啟用設備指派與系統設定權限。", "success");
+          } else {
+            setLoginError(result.message || "帳號或密碼錯誤！請重新確認。");
+          }
+        } catch (error) {
+          console.error("驗證失敗:", error);
+          setLoginError("後端驗證失敗或網路連線錯誤，請稍後再試。");
+        } finally {
+          setIsAuthLoading(false);
         }
       };
 
@@ -368,10 +436,34 @@
         setDeleteConfirmModal(res);
       };
 
-      const confirmDelete = () => {
-        if (deleteConfirmModal) {
-          setReservations(prev => prev.filter(r => r.id !== deleteConfirmModal.id));
-          showNotification(`已成功取消 ${deleteConfirmModal.teacher} 老師的預約。`);
+      const confirmDelete = async () => {
+        if (!deleteConfirmModal) return;
+
+        const targetRes = deleteConfirmModal;
+        showNotification("正在將取消預約同步至後端，請稍候...", "info");
+
+        try {
+          await fetch(GAS_API_URL, {
+            method: "POST",
+            mode: "no-cors",
+            headers: {
+              "Content-Type": "text/plain;charset=utf-8"
+            },
+            body: JSON.stringify({
+              action: "delete",
+              id: targetRes.id,
+              teacher: targetRes.teacher,
+              date: targetRes.date,
+              sessions: targetRes.sessions
+            })
+          });
+
+          setReservations(prev => prev.filter(r => r.id !== targetRes.id));
+          showNotification(`已成功取消 ${targetRes.teacher} 老師的預約並同步至試算表！`);
+        } catch (error) {
+          console.error("同步 GAS 刪除預約失敗:", error);
+          showNotification("後端同步失敗，已於前端先行移除，請檢查網路或試算表狀態。", "error");
+        } finally {
           setDeleteConfirmModal(null);
         }
       };
@@ -392,13 +484,12 @@
         const updatedRecord = {
           ...tabletAssignModal,
           tabletCode: tempTabletCode,
-          action: "updateTabletCode" // 新增 action 欄位供 GAS 判斷為「更新」而非「新增」
+          action: "updateTabletCode"
         };
 
         showNotification("平板編號更新中，請稍候...", "info");
 
         try {
-          // 發送 POST 請求至 GAS API 更新該筆資料
           await fetch(GAS_API_URL, {
             method: "POST",
             mode: "no-cors",
@@ -408,7 +499,6 @@
             body: JSON.stringify(updatedRecord)
           });
 
-          // 更新前端 React 狀態
           setReservations(prev => prev.map(r => {
             if (r.id === tabletAssignModal.id) {
               return { ...r, tabletCode: tempTabletCode };
@@ -645,7 +735,6 @@
         showNotification("平板課表 Word 文件 (.doc) 產生並下載成功！可在 Microsoft Word 或 Google Docs 完美相容開啟。");
       };
 
-      // 重新計算統計數據 (總借用次數與未指派平板數量)
       const stats = useMemo(() => {
         const total = reservations.length;
         const unassigned = reservations.filter(r => !r.tabletCode || r.tabletCode.trim() === "").length;
@@ -811,7 +900,7 @@
                       className="bg-indigo-600 hover:bg-indigo-700 text-white border border-indigo-500 p-3 rounded-xl flex items-center justify-center gap-2 text-xs font-bold transition-all"
                       title="系統預約區間設定"
                     >
-                      <i data-lucide="settings" className="w-4 h-4 animate-spin-slow"></i>
+                      <i data-lucide="settings" className="w-4 h-4"></i>
                       <span>系統設定</span>
                     </button>
                   )}
@@ -1071,7 +1160,7 @@
                       </label>
                       <input
                         type="text"
-                        placeholder="EX: (S)-I(1-30)"
+                        placeholder="EX: (S)-A(1-30), (I)-B(1-30)"
                         value={formData.tabletCode}
                         onChange={(e) => setFormData(prev => ({ ...prev, tabletCode: e.target.value }))}
                         className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 bg-white text-sm"
@@ -1345,7 +1434,7 @@
                     </div>
                   </div>
                 </div>
-                <div className="px-4 py-3 bg-indigo-50/50 border-b border-slate-150 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs font-semibold text-indigo-900">
+                <div className="px-4 py-3 bg-indigo-50/50 border-b border-slate-155 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs font-semibold text-indigo-900">
                   <div className="flex items-center gap-1.5">
                     <i data-lucide="clock" className="w-4 h-4 text-indigo-600"></i>
                     <span>目前查看週別：{formatDate(selectedWeekStart).replace(/-/g, "/")} (一) 至 {currentWeekDays[5].dateStr.replace(/-/g, "/")} (六)</span>
@@ -1559,9 +1648,11 @@
                     </button>
                     <button
                       type="submit"
-                      className="px-5 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white shadow-md transition"
+                      disabled={isAuthLoading}
+                      className="px-5 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white shadow-md transition disabled:opacity-50 flex items-center gap-1.5"
                     >
-                      確認登入
+                      {isAuthLoading && <i data-lucide="loader-2" className="w-3.5 h-3.5 animate-spin"></i>}
+                      {isAuthLoading ? "驗證中..." : "確認登入"}
                     </button>
                   </div>
                 </form>
@@ -1782,14 +1873,14 @@
             </div>
           )}
 
-          {/* TABLET ASSIGNMENT MODAL */}
+          {/* TABLET ASSIGNMENT MODAL (已修改：支援多選與同時間防衝突檢測) */}
           {tabletAssignModal && isAdmin && (
             <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
               <div className="bg-white rounded-2xl border border-slate-100 shadow-2xl max-w-lg w-full overflow-hidden transform transition-all">
                 <div className="p-6 border-b border-slate-150 bg-slate-50/80 flex items-center justify-between">
                   <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                     <i data-lucide="tablet" className="text-indigo-600 w-5 h-5"></i>
-                    指派/設定平板編號
+                    指派/設定平板編號 (可多選)
                   </h3>
                   <button 
                     onClick={() => setTabletAssignModal(null)} 
@@ -1806,43 +1897,66 @@
                     <p>⏰ 借用節次：<strong className="text-slate-800">{tabletAssignModal.sessions.join(", ")}</strong></p>
                   </div>
                   <div className="space-y-1.5">
-                    <label className="block text-sm font-bold text-slate-700">分配平板組別代碼或編號</label>
+                    <label className="block text-sm font-bold text-slate-700">分配平板組別代碼或編號（點擊下方按鈕可多選）</label>
                     <input 
                       type="text"
                       value={tempTabletCode}
                       onChange={(e) => setTempTabletCode(e.target.value)}
-                      placeholder="例如: (S)-A(1-30)、(I)-B(1-30) 或手動修改"
+                      placeholder="例如: (S)-A(1-30), (I)-B(1-30)"
                       className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-mono font-bold"
                     />
                   </div>
                   
                   <div className="space-y-4">
-                    <p className="text-xs font-bold text-indigo-950 uppercase tracking-wider flex items-center gap-1">
-                      <span className="w-1.5 h-3 rounded-full bg-indigo-600"></span>
-                      管理者智慧快選代碼群：
+                    <p className="text-xs font-bold text-indigo-950 uppercase tracking-wider flex items-center justify-between">
+                      <span className="flex items-center gap-1">
+                        <span className="w-1.5 h-3 rounded-full bg-indigo-600"></span>
+                        管理者智慧快選代碼群（灰色代表同時間已借出）：
+                      </span>
+                      {tempTabletCode && (
+                        <button 
+                          type="button" 
+                          onClick={() => setTempTabletCode("")}
+                          className="text-[10px] text-red-500 hover:underline font-normal"
+                        >
+                          清除選擇
+                        </button>
+                      )}
                     </p>
+
                     {/* Samsung Group Grid */}
                     <div className="space-y-1.5 p-3.5 bg-slate-50/50 rounded-xl border border-slate-200/60">
                       <p className="text-xs font-bold text-slate-500 flex items-center gap-1">
                         📱 三星平板系列 <span className="font-mono text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.2 rounded font-semibold">(S) A~P (1-30)</span>
                       </p>
                       <div className="grid grid-cols-4 sm:grid-cols-4 gap-1.5 pt-1.5">
-                        {SAMSUNG_CODES.map((code, idx) => (
-                          <button
-                            key={idx}
-                            type="button"
-                            onClick={() => setTempTabletCode(code)}
-                            className={`text-[11px] py-1 px-1 text-center rounded border font-mono font-bold transition ${
-                              tempTabletCode === code 
-                                ? "bg-indigo-600 border-indigo-600 text-white shadow-sm"
-                                : "bg-white border-slate-200 hover:bg-slate-100 text-slate-700"
-                            }`}
-                          >
-                            {code.replace("(S)-", "")}
-                          </button>
-                        ))}
+                        {SAMSUNG_CODES.map((code, idx) => {
+                          const isOccupied = occupiedTabletCodes.has(code);
+                          const selectedCodes = tempTabletCode.split(',').map(c => c.trim());
+                          const isSelected = selectedCodes.includes(code);
+
+                          return (
+                            <button
+                              key={idx}
+                              type="button"
+                              disabled={isOccupied}
+                              onClick={() => toggleTabletCodeSelect(code)}
+                              className={`text-[11px] py-1 px-1 text-center rounded border font-mono font-bold transition ${
+                                isOccupied
+                                  ? "bg-slate-200 border-slate-300 text-slate-400 cursor-not-allowed line-through"
+                                  : isSelected 
+                                    ? "bg-indigo-600 border-indigo-600 text-white shadow-sm"
+                                    : "bg-white border-slate-200 hover:bg-slate-100 text-slate-700"
+                              }`}
+                              title={isOccupied ? "同一時段已被其他預約指派" : code}
+                            >
+                              {code.replace("(S)-", "")} {isOccupied ? "[借出]" : ""}
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
+
                     {/* iPad & Chromebook Groups */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="p-3 bg-slate-50/50 rounded-xl border border-slate-200/60 space-y-2">
@@ -1850,41 +1964,62 @@
                           🍎 iPad 系列 <span className="font-mono text-[10px] bg-rose-100 text-rose-800 px-1.5 py-0.2 rounded font-semibold">(I) B~H (1-30)</span>
                         </p>
                         <div className="grid grid-cols-4 gap-1.5 pt-1.5">
-                          {IPAD_CODES.map((code, idx) => (
-                            <button
-                              key={idx}
-                              type="button"
-                              onClick={() => setTempTabletCode(code)}
-                              className={`text-[10px] py-1 px-1 text-center rounded border font-mono font-bold transition ${
-                                tempTabletCode === code 
-                                  ? "bg-rose-600 border-rose-600 text-white shadow-sm"
-                                  : "bg-white border-slate-200 hover:bg-slate-100 text-slate-700"
-                              }`}
-                            >
-                              {code.replace("(I)-", "I ")}
-                            </button>
-                          ))}
+                          {IPAD_CODES.map((code, idx) => {
+                            const isOccupied = occupiedTabletCodes.has(code);
+                            const selectedCodes = tempTabletCode.split(',').map(c => c.trim());
+                            const isSelected = selectedCodes.includes(code);
+
+                            return (
+                              <button
+                                key={idx}
+                                type="button"
+                                disabled={isOccupied}
+                                onClick={() => toggleTabletCodeSelect(code)}
+                                className={`text-[10px] py-1 px-1 text-center rounded border font-mono font-bold transition ${
+                                  isOccupied
+                                    ? "bg-slate-200 border-slate-300 text-slate-400 cursor-not-allowed line-through"
+                                    : isSelected 
+                                      ? "bg-rose-600 border-rose-600 text-white shadow-sm"
+                                      : "bg-white border-slate-200 hover:bg-slate-100 text-slate-700"
+                                }`}
+                                title={isOccupied ? "同一時段已被其他預約指派" : code}
+                              >
+                                {code.replace("(I)-", "I ")} {isOccupied ? "[借出]" : ""}
+                              </button>
+                            );
+                          })}
                         </div>
                       </div>
+
                       <div className="p-3 bg-slate-50/50 rounded-xl border border-slate-200/60 space-y-2">
                         <p className="text-xs font-bold text-slate-500">
                           💻 Chromebook 系列 <span className="font-mono text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded font-semibold">(CB) A~B (1-30)</span>
                         </p>
                         <div className="flex gap-1.5">
-                          {CHROMEBOOK_CODES.map((code, idx) => (
-                            <button
-                              key={idx}
-                              type="button"
-                              onClick={() => setTempTabletCode(code)}
-                              className={`text-[11px] py-1.5 px-3 rounded border font-mono font-bold w-full transition ${
-                                tempTabletCode === code 
-                                  ? "bg-emerald-600 border-emerald-600 text-white shadow-sm"
-                                  : "bg-white border-slate-200 hover:bg-slate-100 text-slate-700"
-                              }`}
-                            >
-                              {code.replace("(CB)-", "CB ")}
-                            </button>
-                          ))}
+                          {CHROMEBOOK_CODES.map((code, idx) => {
+                            const isOccupied = occupiedTabletCodes.has(code);
+                            const selectedCodes = tempTabletCode.split(',').map(c => c.trim());
+                            const isSelected = selectedCodes.includes(code);
+
+                            return (
+                              <button
+                                key={idx}
+                                type="button"
+                                disabled={isOccupied}
+                                onClick={() => toggleTabletCodeSelect(code)}
+                                className={`text-[11px] py-1.5 px-3 rounded border font-mono font-bold w-full transition ${
+                                  isOccupied
+                                    ? "bg-slate-200 border-slate-300 text-slate-400 cursor-not-allowed line-through"
+                                    : isSelected 
+                                      ? "bg-emerald-600 border-emerald-600 text-white shadow-sm"
+                                      : "bg-white border-slate-200 hover:bg-slate-100 text-slate-700"
+                                }`}
+                                title={isOccupied ? "同一時段已被其他預約指派" : code}
+                              >
+                                {code.replace("(CB)-", "CB ")} {isOccupied ? "[借出]" : ""}
+                              </button>
+                            );
+                          })}
                         </div>
                       </div>
                     </div>
@@ -1918,7 +2053,7 @@
                   </div>
                   <div>
                     <h3 className="text-base font-bold text-slate-900">確認取消此平板借用預約？</h3>
-                    <p className="text-xs text-slate-500">此動作將無法復原。</p>
+                    <p className="text-xs text-slate-500">此動作將同步移除 Google 試算表上的紀錄。</p>
                   </div>
                 </div>
                 <div className="p-3 bg-slate-50 rounded-xl space-y-1 text-xs text-slate-600 font-medium">
@@ -1954,7 +2089,7 @@
               本網頁提供校內資訊教師、各領域授課教師預約登記使用。所有資料皆即時更新存檔。
             </p>
             <p className="text-[10px] text-slate-500">
-              系統時間依據 2026/07/20 (一) 基準校時運作。
+              系統時間依據今日基準校時運作。
             </p>
           </footer>
         </div>

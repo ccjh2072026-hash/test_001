@@ -17,7 +17,6 @@
       font-family: 'Inter', 'Noto Sans TC', system-ui, -apple-system, sans-serif;
     }
     
-    /* Custom Scrollbar for better UI */
     ::-webkit-scrollbar {
       width: 6px;
       height: 6px;
@@ -33,7 +32,6 @@
     ::-webkit-scrollbar-thumb:hover {
       background: #94a3b8;
     }
-    /* Diagonal lines background for locked slots */
     .locked-stripes {
       background-color: #f8fafc;
       background-image: repeating-linear-gradient(
@@ -47,7 +45,6 @@
   </style>
 </head>
 <body class="bg-slate-50 text-slate-800 min-h-screen">
-  <!-- React root container -->
   <div id="root"></div>
   <script type="text/babel">
     const { useState, useEffect, useMemo, useCallback } = React;
@@ -66,7 +63,6 @@
     ];
     const PURPOSES = ["領域教學", "研習", "校定課程", "社團", "行政業務", "其他"];
     const WEEKDAYS_ZH = ["一", "二", "三", "四", "五", "六"];
-    const DEFAULT_DATE_STR = "2026-07-20";
     const SAMSUNG_CODES = Array.from({ length: 16 }).map((_, i) => `(S)-${String.fromCharCode(65 + i)}(1-30)`);
     const IPAD_CODES = Array.from({ length: 7 }).map((_, i) => `(I)-${String.fromCharCode(66 + i)}(1-30)`);
     const CHROMEBOOK_CODES = ["(CB)-A(1-30)", "(CB)-B(1-30)"];
@@ -88,7 +84,6 @@
     }
 
     function App() {
-      // 後端 API 路徑設定
       const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzW_pWfZ98esw52a1c3I0a91qaK8oyxdA_dOO8B8S5ZD46BUVeEfYLwTlpOGayVjPcl_A/exec";
       const ADMIN_AUTH_URL = "https://script.google.com/macros/s/AKfycbw-b5R_dfCj7aZgDTqT4C7o1crFFPIvRP3SdpLG9A_vqhGpMh2t5NRsqDD5FYmQ1o53/exec";
 
@@ -104,7 +99,7 @@
       });
       const [systemSubtitle, setSystemSubtitle] = useState(() => {
         const saved = localStorage.getItem("ccjh_tablet_system_subtitle_v6");
-        return saved ? saved : "🔔 暑期預約～請於 7/8 前預約。提醒老師務必協助於課堂使用時拍照紀錄，並將相關照片、成果、成效評估等資料上傳。";
+        return saved ? saved : "🔔 暑期預約～請於 7/8 前預約。\n🔔 提醒老師務必協助於課堂使用時拍照紀錄，並將相關照片、成果、成效評估等資料上傳。";
       });
       const [semesterStart, setSemesterStart] = useState(() => {
         const saved = localStorage.getItem("ccjh_tablet_semester_start_v6");
@@ -114,20 +109,21 @@
         const saved = localStorage.getItem("ccjh_tablet_semester_end_v6");
         return saved ? saved : "2026-08-31";
       });
-      const [isEditingTitle, setIsEditingTitle] = useState(false);
-      const [isEditingSubtitle, setIsEditingSubtitle] = useState(false);
       const [isEditingSettings, setIsEditingSettings] = useState(false);
-      const [tempTitle, setTempTitle] = useState(systemTitle);
-      const [tempSubtitle, setTempSubtitle] = useState(systemSubtitle);
       const [tempSemesterStart, setTempSemesterStart] = useState(semesterStart);
       const [tempSemesterEnd, setTempSemesterEnd] = useState(semesterEnd);
+      
+      // 管理員權限狀態
       const [isAdmin, setIsAdmin] = useState(false);
+      const [isPrimaryAdmin, setIsPrimaryAdmin] = useState(false);
+      
       const [showLoginModal, setShowLoginModal] = useState(false);
       const [loginUser, setLoginUser] = useState("");
       const [loginPass, setLoginPass] = useState("");
       const [loginError, setLoginError] = useState("");
       const [activeTab, setActiveTab] = useState("book"); 
-      const [selectedWeekStart, setSelectedWeekStart] = useState(() => getMonday(new Date(DEFAULT_DATE_STR)));
+      
+      const [selectedWeekStart, setSelectedWeekStart] = useState(() => getMonday(new Date()));
       const [searchTerm, setSearchTerm] = useState("");
       const [filterPurpose, setFilterPurpose] = useState("全部");
       
@@ -153,12 +149,20 @@
       const [wordCustomStart, setWordCustomStart] = useState("2026-07-20");
       const [wordCustomEnd, setWordCustomEnd] = useState("2026-07-25");
 
+      // 節次名稱與 SESSIONS 順序對照表
+      const sessionOrderMap = useMemo(() => {
+        const map = {};
+        SESSIONS.forEach((s, idx) => {
+          map[s.name] = idx;
+        });
+        return map;
+      }, []);
+
       const showNotification = useCallback((message, type = "success") => {
         setNotification({ message, type });
         setTimeout(() => setNotification(null), 4000);
       }, []);
 
-      // 讀取 Google Apps Script (GAS) 預約資料紀錄
       const fetchReservationsFromGAS = useCallback(async () => {
         setIsLoading(true);
         try {
@@ -177,7 +181,8 @@
                 ? item.sessions 
                 : (typeof item.sessions === 'string' ? item.sessions.split(',').map(s => s.trim()) : []),
               tabletCode: item.tabletCode || item['指派平板編號'] || ''
-            }));
+            })).reverse();
+            
             setReservations(formatted);
           }
         } catch (err) {
@@ -204,7 +209,7 @@
 
       useEffect(() => {
         localStorage.setItem("ccjh_tablet_system_title_v6", systemTitle);
-        document.title = systemTitle + " - 佳佳國中";
+        document.title = systemTitle + " - 重慶國中";
       }, [systemTitle]);
 
       useEffect(() => {
@@ -274,19 +279,14 @@
         return null;
       }, [formData.date, formData.sessions, reservations]);
 
-      // 計算在目前彈出的指派視窗中，同一時段已被使用的平板編號集合
       const occupiedTabletCodes = useMemo(() => {
         if (!tabletAssignModal) return new Set();
         const occupied = new Set();
         reservations.forEach(r => {
-          // 排除當前正在編輯的這筆紀錄
           if (r.id === tabletAssignModal.id) return;
-          // 比對日期是否相同
           if (r.date === tabletAssignModal.date) {
-            // 比對是否有重疊的節次
             const hasOverlappingSession = r.sessions.some(s => tabletAssignModal.sessions.includes(s));
             if (hasOverlappingSession && r.tabletCode) {
-              // 將已指派的字串拆解為單一編號
               const codes = r.tabletCode.split(',').map(c => c.trim()).filter(Boolean);
               codes.forEach(c => occupied.add(c));
             }
@@ -295,9 +295,8 @@
         return occupied;
       }, [tabletAssignModal, reservations]);
 
-      // 切換平板選擇 (多選邏輯)
       const toggleTabletCodeSelect = (code) => {
-        if (occupiedTabletCodes.has(code)) return; // 若已被指派則不可選擇
+        if (occupiedTabletCodes.has(code)) return;
 
         let currentCodes = tempTabletCode
           .split(',')
@@ -339,9 +338,16 @@
         if (formData.sessions.includes("早自習")) {
           return showNotification("「早自習」時段不開放預約借用！", "error");
         }
+
+        // 依據 SESSIONS 時間順序對 sessions 進行排序
+        const sortedSessions = [...formData.sessions].sort(
+          (a, b) => (sessionOrderMap[a] ?? 99) - (sessionOrderMap[b] ?? 99)
+        );
+
         const newReservation = {
           id: 'res_' + Date.now(),
-          ...formData
+          ...formData,
+          sessions: sortedSessions
         };
 
         showNotification("資料傳送中，請稍候...", "info");
@@ -371,6 +377,7 @@
       const handleAdminToggle = () => {
         if (isAdmin) {
           setIsAdmin(false);
+          setIsPrimaryAdmin(false);
           showNotification("已登出管理員模式。", "info");
         } else {
           setLoginError("");
@@ -404,10 +411,23 @@
 
           if (result.success || result.status === "success" || result.authenticated) {
             setIsAdmin(true);
+            
+            const isFirst = result.isPrimary === true || 
+                            result.isFirstAccount === true || 
+                            result.order === 1 || 
+                            result.index === 0 ||
+                            loginUser.trim().toLowerCase() === "admin";
+
+            setIsPrimaryAdmin(isFirst);
             setShowLoginModal(false);
             setLoginUser("");
             setLoginPass("");
-            showNotification("管理員登入成功！已啟用設備指派與系統設定權限。", "success");
+            
+            if (isFirst) {
+              showNotification("主管理員登入成功！已啟用刪除紀錄與設備指派完整權限。", "success");
+            } else {
+              showNotification("管理員登入成功！僅啟用設備分派權限，無法刪除紀錄。", "info");
+            }
           } else {
             setLoginError(result.message || "帳號或密碼錯誤！請重新確認。");
           }
@@ -431,6 +451,10 @@
         if (!isAdmin) {
           showNotification("取消預約功能限管理員使用，請先登入管理員帳號！", "error");
           setShowLoginModal(true);
+          return;
+        }
+        if (!isPrimaryAdmin) {
+          showNotification("權限不足！只有第一筆資料之主要管理者才可刪除預約紀錄。", "error");
           return;
         }
         setDeleteConfirmModal(res);
@@ -624,7 +648,7 @@
           <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
           <head>
             <meta charset='utf-8'>
-            <title>佳佳國中平板臨時借用預約狀況</title>
+            <title>重慶國中平板臨時借用預約狀況</title>
             <style>
               body { font-family: Arial, "Microsoft JhengHei", sans-serif; padding: 20px; color: #333; }
               .header { text-align: center; margin-bottom: 30px; }
@@ -649,7 +673,7 @@
           </head>
           <body>
             <div class='header'>
-              <h1>佳佳國中 平板借用課表統計表</h1>
+              <h1>重慶國中 平板借用課表統計表</h1>
               <p>系統自動導出檔 - 匯出日期: ${formatDate(new Date())}</p>
             </div>
         `;
@@ -738,7 +762,7 @@
       const stats = useMemo(() => {
         const total = reservations.length;
         const unassigned = reservations.filter(r => !r.tabletCode || r.tabletCode.trim() === "").length;
-        const upcoming = reservations.filter(r => new Date(r.date) >= new Date(DEFAULT_DATE_STR)).length;
+        const upcoming = reservations.filter(r => new Date(r.date) >= new Date()).length;
         
         const teacherCounts = {};
         reservations.forEach(r => {
@@ -765,118 +789,28 @@
                     國中校內資訊設備管理平台
                   </div>
                   
-                  {isEditingTitle ? (
-                    <div className="flex items-center gap-2 mt-1">
-                      <input
-                        type="text"
-                        value={tempTitle}
-                        onChange={(e) => setTempTitle(e.target.value)}
-                        className="bg-white text-slate-800 text-xl md:text-2xl font-bold px-3 py-1.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 w-full md:w-[450px]"
-                      />
-                      <button
-                        onClick={() => {
-                          if (tempTitle.trim()) {
-                            setSystemTitle(tempTitle.trim());
-                            setIsEditingTitle(false);
-                            showNotification("系統標題修改成功！", "success");
-                          } else {
-                            showNotification("標題不可為空", "error");
-                          }
-                        }}
-                        className="p-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white transition flex-shrink-0 inline-flex items-center justify-center"
-                        title="確認儲存"
-                      >
-                        <i data-lucide="check" className="w-4 h-4"></i>
-                      </button>
-                      <button
-                        onClick={() => {
-                          setTempTitle(systemTitle);
-                          setIsEditingTitle(false);
-                        }}
-                        className="p-2 rounded-lg bg-red-500 hover:bg-red-600 text-white transition flex-shrink-0 inline-flex items-center justify-center"
-                        title="取消"
-                      >
-                        <i data-lucide="x" className="w-4 h-4"></i>
-                      </button>
-                    </div>
-                  ) : (
-                    <h1 className="text-2xl md:text-3xl font-bold tracking-tight flex items-center gap-2">
-                      {systemTitle}
-                      {isAdmin && (
-                        <button
-                          onClick={() => {
-                            setTempTitle(systemTitle);
-                            setIsEditingTitle(true);
-                          }}
-                          className="p-1 rounded bg-white/20 hover:bg-white/30 transition text-white inline-flex items-center justify-center"
-                          title="修改系統標題"
-                        >
-                          <i data-lucide="edit-3" className="w-4 h-4"></i>
-                        </button>
-                      )}
-                    </h1>
-                  )}
+                  <h1 className="text-2xl md:text-3xl font-bold tracking-tight flex items-center gap-2">
+                    {systemTitle}
+                  </h1>
                   
-                  {isEditingSubtitle ? (
-                    <div className="flex gap-2 mt-2 w-full max-w-2xl">
-                      <textarea
-                        value={tempSubtitle}
-                        onChange={(e) => setTempSubtitle(e.target.value)}
-                        className="bg-white text-slate-800 text-xs md:text-sm px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 w-full h-20 resize-none"
-                      />
-                      <div className="flex flex-col gap-2 flex-shrink-0">
-                        <button
-                          onClick={() => {
-                            setSystemSubtitle(tempSubtitle.trim());
-                            setIsEditingSubtitle(false);
-                            showNotification("系統說明修改成功！", "success");
-                          }}
-                          className="p-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white transition inline-flex items-center justify-center"
-                          title="確認儲存"
-                        >
-                          <i data-lucide="check" className="w-4 h-4"></i>
-                        </button>
-                        <button
-                          onClick={() => {
-                            setTempSubtitle(systemSubtitle);
-                            setIsEditingSubtitle(false);
-                          }}
-                          className="p-2 rounded-lg bg-red-500 hover:bg-red-600 text-white transition inline-flex items-center justify-center"
-                          title="取消"
-                        >
-                          <i data-lucide="x" className="w-4 h-4"></i>
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="text-purple-100 text-xs md:text-sm mt-1 max-w-3xl flex items-start gap-2 group">
-                      <p className="flex-1 leading-relaxed">{systemSubtitle}</p>
-                      {isAdmin && (
-                        <button
-                          onClick={() => {
-                            setTempSubtitle(systemSubtitle);
-                            setIsEditingSubtitle(true);
-                          }}
-                          className="p-1 rounded bg-white/20 hover:bg-white/30 transition text-white inline-flex items-center justify-center opacity-75 group-hover:opacity-100 flex-shrink-0"
-                          title="修改系統說明與注意事項"
-                        >
-                          <i data-lucide="edit-2" className="w-3.5 h-3.5"></i>
-                        </button>
-                      )}
-                    </div>
-                  )}
+                  <div className="text-purple-100 text-xs md:text-sm mt-1 max-w-3xl flex items-start gap-2">
+                    <p className="flex-1 leading-relaxed whitespace-pre-line">{systemSubtitle}</p>
+                  </div>
                 </div>
                 
-                {/* Admin Toggle */}
                 <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
                   <div className="flex items-center gap-3 bg-white/10 p-2.5 rounded-xl border border-white/20 backdrop-blur-md">
                     <div className="flex items-center gap-2">
-                      <span className={`p-1.5 rounded-md ${isAdmin ? 'bg-emerald-500 text-white animate-pulse' : 'bg-white/15 text-white/70'}`}>
-                        <i data-lucide={isAdmin ? "shield-check" : "lock-keyhole"} className="w-4 h-4"></i>
+                      <span className={`p-1.5 rounded-md ${isAdmin ? (isPrimaryAdmin ? 'bg-emerald-500 text-white animate-pulse' : 'bg-blue-500 text-white') : 'bg-white/15 text-white/70'}`}>
+                        <i data-lucide={isAdmin ? "shield-check" : "lock"} className="w-4 h-4"></i>
                       </span>
                       <div className="text-left pr-2">
                         <p className="text-[11px] font-bold text-white/90 leading-tight">管理權限模式</p>
-                        <p className="text-[10px] text-white/60 leading-none">{isAdmin ? "管理權限已啟用" : "需登入以編輯平板"}</p>
+                        <p className="text-[10px] text-white/60 leading-none">
+                          {isAdmin 
+                            ? (isPrimaryAdmin ? "主要管理者 (完整權限)" : "次要管理者 (僅分派權限)") 
+                            : "需登入以編輯平板"}
+                        </p>
                       </div>
                     </div>
                     <button 
@@ -909,7 +843,6 @@
             </div>
           </header>
 
-          {/* Toast Notification */}
           {notification && (
             <div className={`fixed top-4 right-4 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-2xl transition-all duration-300 transform translate-y-0 ${
               notification.type === "error" ? "bg-red-50 text-red-800 border-l-4 border-red-500" :
@@ -921,7 +854,6 @@
             </div>
           )}
 
-          {/* Statistics Dashboard */}
           <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:py-6">
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6">
               <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
@@ -953,8 +885,7 @@
                 <div>
                   <p className="text-xs text-slate-500">學期預約可借區間</p>
                   <p className="text-[11px] font-bold text-emerald-800 leading-tight">
-                    {semesterStart.replace(/-/g, "/")} ~ <br/>
-                    {semesterEnd.replace(/-/g, "/")}
+                    {semesterStart.replace(/-/g, "/")} ~ {semesterEnd.replace(/-/g, "/")}
                   </p>
                 </div>
               </div>
@@ -1021,11 +952,10 @@
                     校內平板臨時借用預約單
                   </h2>
                   <p className="text-slate-500 text-xs mt-1.5">
-                    請填寫基本預約資訊。目前可預約之學期日期限制為：<strong className="text-indigo-600">{semesterStart}</strong> 至 <strong className="text-indigo-600">{semesterEnd}</strong>。
+                    請填寫基本預約資訊。目前可預約之學期日期限制為：<strong className="text-indigo-600">{semesterStart}</strong> ~ <strong className="text-indigo-600">{semesterEnd}</strong>。
                   </p>
                 </div>
                 <form onSubmit={handleSubmit} className="p-6 md:p-8 space-y-6">
-                  {/* Email */}
                   <div className="space-y-1.5">
                     <label className="block text-sm font-bold text-slate-700">
                       電子郵件 <span className="text-red-500">*</span>
@@ -1039,7 +969,6 @@
                       className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 text-sm"
                     />
                   </div>
-                  {/* Teacher Name */}
                   <div className="space-y-1.5">
                     <label className="block text-sm font-bold text-slate-700">
                       借用教師姓名 <span className="text-red-500">*</span>
@@ -1053,7 +982,6 @@
                       className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 text-sm"
                     />
                   </div>
-                  {/* Purpose */}
                   <div className="space-y-1.5">
                     <label className="block text-sm font-bold text-slate-700">
                       用途 <span className="text-red-500">*</span>
@@ -1081,7 +1009,6 @@
                       ))}
                     </div>
                   </div>
-                  {/* Date */}
                   <div className="space-y-1.5">
                     <label className="block text-sm font-bold text-slate-700">
                       借用日期 <span className="text-red-500">*</span>
@@ -1096,10 +1023,9 @@
                       className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 text-sm font-mono font-semibold text-slate-800"
                     />
                     <p className="text-[11px] text-indigo-500">
-                      * 僅開放：{semesterStart} 至 {semesterEnd} 之間的工作日。
+                      * 僅開放：{semesterStart} ~ {semesterEnd} 之間的工作日。
                     </p>
                   </div>
-                  {/* Grade/Class Target */}
                   <div className="space-y-1.5">
                     <label className="block text-sm font-bold text-slate-700">
                       使用年級或班級 (活動或研習請填其他) <span className="text-red-500">*</span>
@@ -1113,7 +1039,6 @@
                       className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 text-sm"
                     />
                   </div>
-                  {/* Sessions */}
                   <div className="space-y-1.5">
                     <label className="block text-sm font-bold text-slate-700">
                       使用節次 (可複選) <span className="text-red-500">*</span>
@@ -1336,7 +1261,7 @@
                               <td className="p-4 font-semibold">
                                 <div className="flex items-center gap-1.5">
                                   {res.tabletCode ? (
-                                    <span className="bg-slate-100 text-slate-800 text-xs px-2 py-1 rounded font-mono font-bold border border-slate-200">
+                                    <span className="bg-slate-100 text-slate-800 text-xs px-2 py-1 rounded font-mono font-bold border border-slate-200 break-all">
                                       {res.tabletCode}
                                     </span>
                                   ) : (
@@ -1354,18 +1279,21 @@
                                 </div>
                               </td>
                               <td className="p-4 text-center">
-                                <button
-                                  onClick={() => requestDelete(res)}
-                                  className={`p-2 rounded-lg transition inline-flex items-center gap-1 text-xs font-semibold ${
-                                    isAdmin 
-                                      ? "text-red-500 hover:text-red-700 hover:bg-red-50" 
-                                      : "text-slate-400 hover:text-red-600 hover:bg-slate-100"
-                                  }`}
-                                  title={isAdmin ? "取消平板借用" : "登入管理員以取消預約"}
-                                >
-                                  <i data-lucide={isAdmin ? "trash-2" : "lock"} className="w-4 h-4"></i>
-                                  {isAdmin ? "取消預約" : "需管理者"}
-                                </button>
+                                {isPrimaryAdmin ? (
+                                  <button
+                                    onClick={() => requestDelete(res)}
+                                    className="p-2 rounded-lg transition inline-flex items-center gap-1 text-xs font-semibold text-red-500 hover:text-red-700 hover:bg-red-50"
+                                    title="取消平板借用"
+                                  >
+                                    <i data-lucide="trash-2" className="w-4 h-4"></i>
+                                    取消預約
+                                  </button>
+                                ) : (
+                                  <span className="text-slate-400 text-xs flex items-center justify-center gap-1 italic" title="次要管理員帳號不具備刪除紀錄權限">
+                                    <i data-lucide="lock" className="w-3.5 h-3.5"></i>
+                                    {isAdmin ? "無刪除權限" : "需管理者"}
+                                  </span>
+                                )}
                               </td>
                             </tr>
                           );
@@ -1384,7 +1312,7 @@
                   </table>
                 </div>
                 <div className="bg-slate-50 border-t border-slate-200 p-4 text-right text-xs text-slate-400 font-medium">
-                  管理權限鎖定：修改及匯出資料需經管理員驗證。
+                  管理權限鎖定：此管理員帳號登入時僅開放「指派平板編號」，無法刪除預約紀錄。
                 </div>
               </div>
             )}
@@ -1437,7 +1365,7 @@
                 <div className="px-4 py-3 bg-indigo-50/50 border-b border-slate-155 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs font-semibold text-indigo-900">
                   <div className="flex items-center gap-1.5">
                     <i data-lucide="clock" className="w-4 h-4 text-indigo-600"></i>
-                    <span>目前查看週別：{formatDate(selectedWeekStart).replace(/-/g, "/")} (一) 至 {currentWeekDays[5].dateStr.replace(/-/g, "/")} (六)</span>
+                    <span>目前查看週別：{formatDate(selectedWeekStart).replace(/-/g, "/")} (一) ~ {currentWeekDays[5].dateStr.replace(/-/g, "/")} (六)</span>
                   </div>
                   
                   {isAdmin ? (
@@ -1537,19 +1465,19 @@
                                           <span className="truncate">👤 {res.teacher} 老師</span>
                                         </div>
                                       </div>
-                                      <div className="mt-2 pt-1 border-t border-dashed border-current/15 flex items-center justify-between gap-1">
+                                      <div className="mt-2 pt-1 border-t border-dashed border-current/15 flex items-start justify-between gap-1">
                                         {res.tabletCode ? (
-                                          <span className="bg-white/85 px-1.5 py-0.5 rounded text-[9px] text-slate-700 font-bold border border-slate-200/50 font-mono truncate max-w-[85px]">
+                                          <span className="bg-white/85 px-1.5 py-0.5 rounded text-[9px] text-slate-700 font-bold border border-slate-200/50 font-mono break-all leading-normal flex-1">
                                             🏷️ {res.tabletCode}
                                           </span>
                                         ) : (
-                                          <span className="bg-red-100 text-red-700 px-1 py-0.5 rounded text-[9px] font-bold border border-red-200">
+                                          <span className="bg-red-100 text-red-700 px-1 py-0.5 rounded text-[9px] font-bold border border-red-200 flex-shrink-0">
                                             ⚠️ 未指派
                                           </span>
                                         )}
                                         <button
                                           onClick={() => openTabletAssign(res)}
-                                          className={`p-1 rounded-lg transition ml-auto flex-shrink-0 ${isAdmin ? "bg-indigo-600 hover:bg-indigo-700 text-white" : "bg-slate-200 hover:bg-slate-300 text-slate-500"}`}
+                                          className={`p-1 rounded-lg transition ml-auto flex-shrink-0 mt-0.5 ${isAdmin ? "bg-indigo-600 hover:bg-indigo-700 text-white" : "bg-slate-200 hover:bg-slate-300 text-slate-500"}`}
                                           title={isAdmin ? "管理端：指派平板編號" : "登入管理員以設定平板"}
                                         >
                                           <i data-lucide={isAdmin ? "edit-3" : "lock"} className="w-2.5 h-2.5"></i>
@@ -1598,7 +1526,7 @@
               <div className="bg-white rounded-2xl border border-slate-100 shadow-2xl max-w-sm w-full overflow-hidden transform transition-all">
                 <div className="p-6 border-b border-slate-155 bg-slate-50 flex items-center justify-between">
                   <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
-                    <i data-lucide="shield-check" className="text-indigo-600 w-5 h-5"></i>
+                    <i data-lucide="lock" className="text-indigo-600 w-5 h-5"></i>
                     管理員安全登入
                   </h3>
                   <button 
@@ -1873,7 +1801,7 @@
             </div>
           )}
 
-          {/* TABLET ASSIGNMENT MODAL (已修改：支援多選與同時間防衝突檢測) */}
+          {/* TABLET ASSIGNMENT MODAL */}
           {tabletAssignModal && isAdmin && (
             <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
               <div className="bg-white rounded-2xl border border-slate-100 shadow-2xl max-w-lg w-full overflow-hidden transform transition-all">
@@ -1924,7 +1852,6 @@
                       )}
                     </p>
 
-                    {/* Samsung Group Grid */}
                     <div className="space-y-1.5 p-3.5 bg-slate-50/50 rounded-xl border border-slate-200/60">
                       <p className="text-xs font-bold text-slate-500 flex items-center gap-1">
                         📱 三星平板系列 <span className="font-mono text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.2 rounded font-semibold">(S) A~P (1-30)</span>
@@ -1957,7 +1884,6 @@
                       </div>
                     </div>
 
-                    {/* iPad & Chromebook Groups */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="p-3 bg-slate-50/50 rounded-xl border border-slate-200/60 space-y-2">
                         <p className="text-xs font-bold text-slate-500">
@@ -2044,7 +1970,7 @@
           )}
 
           {/* DELETION CONFIRMATION MODAL */}
-          {deleteConfirmModal && isAdmin && (
+          {deleteConfirmModal && isPrimaryAdmin && (
             <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
               <div className="bg-white rounded-2xl border border-slate-100 shadow-2xl max-w-sm w-full overflow-hidden transform transition-all p-6 space-y-4">
                 <div className="flex items-center gap-3 text-red-600">
@@ -2080,10 +2006,9 @@
             </div>
           )}
 
-          {/* Footer */}
           <footer className="bg-slate-900 text-slate-400 border-t border-slate-800 py-8 px-4 mt-12 text-center text-xs space-y-2">
             <p className="font-bold text-slate-300">
-              新北市立佳佳國民中學 平板臨時設備借用系統
+              新北市立重慶國民中學 平板臨時設備借用系統
             </p>
             <p>
               本網頁提供校內資訊教師、各領域授課教師預約登記使用。所有資料皆即時更新存檔。

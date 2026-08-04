@@ -92,6 +92,7 @@
         return saved ? JSON.parse(saved) : INITIAL_RESERVATIONS;
       });
       const [isLoading, setIsLoading] = useState(false);
+      const [isSyncing, setIsSyncing] = useState(false); // 背景同步指示
       const [isAuthLoading, setIsAuthLoading] = useState(false);
       const [systemTitle, setSystemTitle] = useState(() => {
         const saved = localStorage.getItem("ccjh_tablet_system_title_v6");
@@ -107,7 +108,7 @@
       });
       const [semesterEnd, setSemesterEnd] = useState(() => {
         const saved = localStorage.getItem("ccjh_tablet_semester_end_v6");
-        return saved ? saved : "2026-08-31";
+        return saved ? saved : "2026-12-31";
       });
       const [isEditingSettings, setIsEditingSettings] = useState(false);
       const [tempSemesterStart, setTempSemesterStart] = useState(semesterStart);
@@ -143,7 +144,7 @@
       const [showExportModal, setShowExportModal] = useState(false);
       const [exportRangeType, setExportRangeType] = useState("all");
       const [customExportStart, setCustomExportStart] = useState("2026-07-01");
-      const [customExportEnd, setCustomExportEnd] = useState("2026-08-31");
+      const [customExportEnd, setCustomExportEnd] = useState("2026-12-31");
       const [showWordExportModal, setShowWordExportModal] = useState(false);
       const [wordExportType, setWordExportType] = useState("week");
       const [wordCustomStart, setWordCustomStart] = useState("2026-07-20");
@@ -163,8 +164,9 @@
         setTimeout(() => setNotification(null), 4000);
       }, []);
 
+      // 優化 2：改為背景默默同步，不阻塞 UI 畫面
       const fetchReservationsFromGAS = useCallback(async () => {
-        setIsLoading(true);
+        setIsSyncing(true);
         try {
           const res = await fetch(GAS_API_URL);
           if (!res.ok) throw new Error("網路回應錯誤");
@@ -189,19 +191,17 @@
           console.error("讀取 GAS 資料失敗:", err);
           showNotification("讀取線上預約紀錄失敗，已使用快取資料。", "error");
         } finally {
+          setIsSyncing(false);
           setIsLoading(false);
         }
       }, [GAS_API_URL, showNotification]);
 
+      // 頁面初始化時執行背景同步
       useEffect(() => {
         fetchReservationsFromGAS();
       }, [fetchReservationsFromGAS]);
 
-      useEffect(() => {
-        if (activeTab === "list" || activeTab === "timetable") {
-          fetchReservationsFromGAS();
-        }
-      }, [activeTab, fetchReservationsFromGAS]);
+      // 優化 1：已刪除 [activeTab] 切換時重複觸發 API 的 useEffect
 
       useEffect(() => {
         localStorage.setItem("ccjh_tablet_reservations_v6", JSON.stringify(reservations));
@@ -776,7 +776,7 @@
         if (window.lucide) {
           window.lucide.createIcons();
         }
-      }, [activeTab, isLoading, reservations]);
+      }, [activeTab, isLoading, reservations, isSyncing]);
 
       return (
         <div className="min-h-screen flex flex-col">
@@ -787,6 +787,11 @@
                   <div className="inline-flex items-center gap-2 bg-white/20 text-white text-xs font-semibold px-3 py-1 rounded-full backdrop-blur-sm mb-2">
                     <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
                     國中校內資訊設備管理平台
+                    {isSyncing && (
+                      <span className="text-[10px] bg-white/30 px-2 py-0.5 rounded text-indigo-100 flex items-center gap-1">
+                        <i data-lucide="refresh-cw" className="w-3 h-3 animate-spin"></i> 背景同步中
+                      </span>
+                    )}
                   </div>
                   
                   <h1 className="text-2xl md:text-3xl font-bold tracking-tight flex items-center gap-2">
@@ -863,7 +868,7 @@
                 <div>
                   <p className="text-xs text-slate-500">總平板預約借用次數</p>
                   <p className="text-xl font-bold text-slate-800">
-                    {isLoading ? "讀取中..." : `${stats.total} 筆紀錄`}
+                    {stats.total} 筆紀錄
                   </p>
                 </div>
               </div>
@@ -874,7 +879,7 @@
                 <div>
                   <p className="text-xs text-slate-500">未指派平板編號</p>
                   <p className="text-xl font-bold text-red-600">
-                    {isLoading ? "讀取中..." : `${stats.unassigned} 筆待指派`}
+                    {stats.unassigned} 筆待指派
                   </p>
                 </div>
               </div>
@@ -1147,11 +1152,11 @@
                   <div className="flex flex-wrap items-center gap-2.5">
                     <button
                       onClick={fetchReservationsFromGAS}
-                      disabled={isLoading}
+                      disabled={isSyncing}
                       className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition shadow-sm"
                       title="重新整理資料"
                     >
-                      <i data-lucide="refresh-cw" className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`}></i>
+                      <i data-lucide="refresh-cw" className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`}></i>
                       重新整理
                     </button>
                     {isAdmin ? (
@@ -1214,16 +1219,7 @@
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 text-sm">
-                      {isLoading ? (
-                        <tr>
-                          <td colSpan="7" className="p-12 text-center text-slate-500">
-                            <div className="flex flex-col items-center justify-center gap-2">
-                              <i data-lucide="loader-2" className="w-8 h-8 animate-spin text-indigo-600"></i>
-                              <p className="text-sm font-medium">資料載入中，請稍候...</p>
-                            </div>
-                          </td>
-                        </tr>
-                      ) : filteredReservations.length > 0 ? (
+                      {filteredReservations.length > 0 ? (
                         filteredReservations.map((res, idx) => {
                           let purposeBadge = "bg-indigo-50 text-indigo-700 border-indigo-200";
                           if (res.purpose === "研習") purposeBadge = "bg-amber-50 text-amber-700 border-amber-200";

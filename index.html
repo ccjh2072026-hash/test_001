@@ -17,6 +17,11 @@
       font-family: 'Inter', 'Noto Sans TC', system-ui, -apple-system, sans-serif;
     }
     
+    input[type="date"]::-webkit-calendar-picker-indicator {
+      margin-left: 16px;
+      cursor: pointer;
+    }
+
     ::-webkit-scrollbar {
       width: 6px;
       height: 6px;
@@ -83,7 +88,6 @@
       return `${year}-${month}-${day}`;
     }
 
-    // CSV 欄位防護轉義函式
     const escapeCsv = (str) => `"${String(str || '').replace(/"/g, '""')}"`;
 
     function App() {
@@ -95,8 +99,8 @@
         return saved ? JSON.parse(saved) : INITIAL_RESERVATIONS;
       });
       const [isLoading, setIsLoading] = useState(false);
-      const [isSyncing, setIsSyncing] = useState(false); // 背景同步指示
-      const [isSubmitting, setIsSubmitting] = useState(false); // 表單送出鎖定狀態
+      const [isSyncing, setIsSyncing] = useState(false);
+      const [isSubmitting, setIsSubmitting] = useState(false);
       const [isAuthLoading, setIsAuthLoading] = useState(false);
       const [systemTitle, setSystemTitle] = useState(() => {
         const saved = localStorage.getItem("ccjh_tablet_system_title_v6");
@@ -107,14 +111,12 @@
         return saved ? saved : "🔔 暑期預約～請於 7/8 前預約。\n🔔 提醒老師務必協助於課堂使用時拍照紀錄，並將相關照片、成果、成效評估等資料上傳。";
       });
 
-      // 方案 A：完全忽略快取，直接固定使用預設值
-      const DEFAULT_SEMESTER_START = "2026-07-01"; // 預期起日
-      const DEFAULT_SEMESTER_END = "2027-01-31";   // 預期迄日
+      const DEFAULT_SEMESTER_START = "2026-07-01";
+      const DEFAULT_SEMESTER_END = "2027-01-31";
 
       const [semesterStart] = useState(DEFAULT_SEMESTER_START);
       const [semesterEnd] = useState(DEFAULT_SEMESTER_END);
       
-      // 管理員權限狀態
       const [isAdmin, setIsAdmin] = useState(false);
       const [isPrimaryAdmin, setIsPrimaryAdmin] = useState(false);
       
@@ -132,7 +134,7 @@
         email: "",
         teacher: "",
         purpose: "領域教學",
-        date: formatDate(new Date()),
+        dates: [formatDate(new Date())],
         grade: "",
         sessions: [],
         tabletCode: ""
@@ -150,7 +152,41 @@
       const [wordCustomStart, setWordCustomStart] = useState("2026-07-20");
       const [wordCustomEnd, setWordCustomEnd] = useState("2026-07-25");
 
-      // 節次名稱與 SESSIONS 順序對照表
+      // 需求 3 & 4 相關 State: 統計分頁的起訖日期與選擇模式
+      const [statsDateMode, setStatsDateMode] = useState("year"); // year | month | week | custom
+      const [statsYear, setStatsYear] = useState(() => new Date().getFullYear().toString());
+      const [statsMonth, setStatsMonth] = useState(() => `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`);
+      const [statsWeekBase, setStatsWeekBase] = useState(() => formatDate(new Date()));
+      const [statsStartDate, setStatsStartDate] = useState("2026-01-01");
+      const [statsEndDate, setStatsEndDate] = useState("2026-12-31");
+      const [statsCountMode, setStatsCountMode] = useState("count"); // count: 依借用次數 | sessions: 依使用節次累計
+      const [statsCategoryFilter, setStatsCategoryFilter] = useState("ALL"); // ALL | Samsung | iPad | Chromebook | Other
+      const [statsSearch, setStatsSearch] = useState("");
+      const [statsSortOrder, setStatsSortOrder] = useState("desc"); // desc | asc
+
+      // 根據模式動態更新統計的起訖日期
+      useEffect(() => {
+        if (statsDateMode === "year") {
+          setStatsStartDate(`${statsYear}-01-01`);
+          setStatsEndDate(`${statsYear}-12-31`);
+        } else if (statsDateMode === "month") {
+          if (statsMonth) {
+            const [y, m] = statsMonth.split('-').map(Number);
+            const lastDay = new Date(y, m, 0).getDate();
+            setStatsStartDate(`${y}-${String(m).padStart(2, '0')}-01`);
+            setStatsEndDate(`${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`);
+          }
+        } else if (statsDateMode === "week") {
+          if (statsWeekBase) {
+            const mon = getMonday(new Date(statsWeekBase));
+            const sat = new Date(mon);
+            sat.setDate(mon.getDate() + 5);
+            setStatsStartDate(formatDate(mon));
+            setStatsEndDate(formatDate(sat));
+          }
+        }
+      }, [statsDateMode, statsYear, statsMonth, statsWeekBase]);
+
       const sessionOrderMap = useMemo(() => {
         const map = {};
         SESSIONS.forEach((s, idx) => {
@@ -164,7 +200,31 @@
         setTimeout(() => setNotification(null), 4000);
       }, []);
 
-      // 改為背景默默同步，不阻塞 UI 畫面
+      const handleAddDate = () => {
+        if (formData.dates.length < 5) {
+          setFormData(prev => ({
+            ...prev,
+            dates: [...prev.dates, formatDate(new Date())]
+          }));
+        }
+      };
+
+      const handleDateChange = (index, value) => {
+        setFormData(prev => {
+          const newDates = [...prev.dates];
+          newDates[index] = value;
+          return { ...prev, dates: newDates };
+        });
+      };
+
+      const handleRemoveDate = (index) => {
+        setFormData(prev => {
+          if (prev.dates.length <= 1) return prev;
+          const newDates = prev.dates.filter((_, i) => i !== index);
+          return { ...prev, dates: newDates };
+        });
+      };
+
       const fetchReservationsFromGAS = useCallback(async () => {
         setIsSyncing(true);
         try {
@@ -196,7 +256,6 @@
         }
       }, [GAS_API_URL, showNotification]);
 
-      // 頁面初始化時執行背景同步
       useEffect(() => {
         fetchReservationsFromGAS();
       }, [fetchReservationsFromGAS]);
@@ -253,7 +312,6 @@
         });
       };
 
-      // 【新需求2實作】複製明細紀錄中點擊的教師資料至表單
       const handleCopyTeacherInfo = (res) => {
         setFormData(prev => ({
           ...prev,
@@ -266,20 +324,20 @@
       };
 
       const duplicateWarning = useMemo(() => {
-        if (!formData.date || formData.sessions.length === 0) return null;
+        if (!formData.dates || formData.dates.length === 0 || formData.sessions.length === 0) return null;
         
         const conflicting = reservations.filter(res => {
-          if (res.date !== formData.date) return false;
+          if (!formData.dates.includes(res.date)) return false;
           return res.sessions.some(s => formData.sessions.includes(s));
         });
         if (conflicting.length > 0) {
           return {
-            message: `⚠️ 注意！${formData.date} 當天，已由以下老師預約同節次：`,
-            conflicts: conflicting.map(c => `${c.teacher} (${c.grade} / ${c.sessions.join(", ")})`)
+            message: `⚠️ 注意！您選擇的日期中，已由以下老師預約同節次：`,
+            conflicts: conflicting.map(c => `${c.date} ${c.teacher} (${c.grade} / ${c.sessions.join(", ")})`)
           };
         }
         return null;
-      }, [formData.date, formData.sessions, reservations]);
+      }, [formData.dates, formData.sessions, reservations]);
 
       const occupiedTabletCodes = useMemo(() => {
         if (!tabletAssignModal) return new Set();
@@ -320,7 +378,7 @@
         }
         setFormData(prev => ({
           ...prev,
-          date: dateStr,
+          dates: [dateStr],
           sessions: [sessionName]
         }));
         setActiveTab("book");
@@ -335,46 +393,59 @@
         if (!formData.teacher.trim()) return showNotification("請填寫借用教師姓名", "error");
         if (!formData.grade.trim()) return showNotification("請填寫使用年級與班級", "error");
         if (formData.sessions.length === 0) return showNotification("請至少選擇一個使用節次", "error");
-        if (new Date(formData.date) < new Date(semesterStart) || new Date(formData.date) > new Date(semesterEnd)) {
-          return showNotification(`借用日期超出該學期可借用區間！目前範圍：${semesterStart} 至 ${semesterEnd}`, "error");
+        if (formData.dates.length === 0) return showNotification("請至少選擇一個借用日期", "error");
+
+        for (const d of formData.dates) {
+          if (!d) return showNotification("借用日期不得為空", "error");
+          if (new Date(d) < new Date(semesterStart) || new Date(d) > new Date(semesterEnd)) {
+            return showNotification(`日期 ${d} 超出該學期可借用區間！目前範圍：${semesterStart} 至 ${semesterEnd}`, "error");
+          }
         }
+
         if (formData.sessions.includes("早自習")) {
           return showNotification("「早自習」時段不開放預約借用！", "error");
         }
 
         setIsSubmitting(true);
 
-        // 依據 SESSIONS 時間順序對 sessions 進行排序
         const sortedSessions = [...formData.sessions].sort(
           (a, b) => (sessionOrderMap[a] ?? 99) - (sessionOrderMap[b] ?? 99)
         );
 
-        const newReservation = {
-          id: 'res_' + Date.now(),
-          ...formData,
-          sessions: sortedSessions
-        };
+        const newReservations = formData.dates.map((d, index) => ({
+          id: 'res_' + Date.now() + '_' + index,
+          email: formData.email,
+          teacher: formData.teacher,
+          purpose: formData.purpose,
+          date: d,
+          grade: formData.grade,
+          sessions: sortedSessions,
+          tabletCode: formData.tabletCode
+        }));
 
-        showNotification("資料傳送中，請稍候...", "info");
+        showNotification(`正在傳送 ${newReservations.length} 筆預約資料，請稍候...`, "info");
         try {
-          await fetch(GAS_API_URL, {
-            method: "POST",
-            mode: "no-cors",
-            headers: {
-              "Content-Type": "text/plain;charset=utf-8"
-            },
-            body: JSON.stringify(newReservation)
-          });
+          await Promise.all(
+            newReservations.map(resObj =>
+              fetch(GAS_API_URL, {
+                method: "POST",
+                mode: "no-cors",
+                headers: {
+                  "Content-Type": "text/plain;charset=utf-8"
+                },
+                body: JSON.stringify(resObj)
+              })
+            )
+          );
 
-          setReservations(prev => [newReservation, ...prev]);
-          showNotification("預約借用成功！已將您的預約登錄至 Google 試算表與系統。");
+          setReservations(prev => [...newReservations, ...prev]);
+          showNotification(`預約借用成功！已同步產生 ${newReservations.length} 筆獨立預約紀錄並登錄至 Google 試算表。`);
           
-          // 【新需求1實作】預約成功送出後，清空所有輸入欄位恢復為初始狀態
           setFormData({
             email: "",
             teacher: "",
             purpose: "領域教學",
-            date: formatDate(new Date()),
+            dates: [formatDate(new Date())],
             grade: "",
             sessions: [],
             tabletCode: ""
@@ -768,7 +839,12 @@
 
       const stats = useMemo(() => {
         const total = reservations.length;
-        const unassigned = reservations.filter(r => !r.tabletCode || r.tabletCode.trim() === "").length;
+        const todayStr = formatDate(new Date());
+        
+        const unassigned = reservations.filter(r => 
+          (!r.tabletCode || r.tabletCode.trim() === "") && r.date >= todayStr
+        ).length;
+        
         const upcoming = reservations.filter(r => new Date(r.date) >= new Date()).length;
         
         const teacherCounts = {};
@@ -779,11 +855,123 @@
         return { total, unassigned, upcoming, activeTeacher };
       }, [reservations]);
 
+      // 需求 2、3、4 & 建議 1、2、3、4 的核心計算邏輯：平板次數統計
+      const tabletUsageStats = useMemo(() => {
+        const counts = {};
+        let unassignedCount = 0;
+        let totalAssignedUsages = 0;
+
+        const filteredByDate = reservations.filter(r => {
+          if (!r.date) return false;
+          return r.date >= statsStartDate && r.date <= statsEndDate;
+        });
+
+        filteredByDate.forEach(r => {
+          const multiplier = statsCountMode === "sessions" ? (r.sessions ? r.sessions.length : 1) : 1;
+          
+          if (!r.tabletCode || r.tabletCode.trim() === "") {
+            unassignedCount += multiplier;
+          } else {
+            // 解析多組平板編號 (例如： "(S)-A(1-30), (I)-B(1-30)")
+            const codes = r.tabletCode.split(',').map(c => c.trim()).filter(Boolean);
+            if (codes.length === 0) {
+              unassignedCount += multiplier;
+            } else {
+              codes.forEach(code => {
+                counts[code] = (counts[code] || 0) + multiplier;
+                totalAssignedUsages += multiplier;
+              });
+            }
+          }
+        });
+
+        // 整理所有預設已知編號與已計算編號，避免有設備完全沒顯示
+        const allKnownCodes = [
+          ...SAMSUNG_CODES,
+          ...IPAD_CODES,
+          ...CHROMEBOOK_CODES,
+          ...Object.keys(counts)
+        ];
+        const uniqueCodes = Array.from(new Set(allKnownCodes));
+
+        let list = uniqueCodes.map(code => {
+          let category = "Other";
+          if (code.includes("(S)-")) category = "Samsung";
+          else if (code.includes("(I)-")) category = "iPad";
+          else if (code.includes("(CB)-")) category = "Chromebook";
+
+          return {
+            code,
+            category,
+            count: counts[code] || 0
+          };
+        });
+
+        // 分類篩選
+        if (statsCategoryFilter !== "ALL") {
+          list = list.filter(item => item.category === statsCategoryFilter);
+        }
+
+        // 搜尋篩選
+        if (statsSearch.trim()) {
+          const q = statsSearch.trim().toLowerCase();
+          list = list.filter(item => item.code.toLowerCase().includes(q));
+        }
+
+        // 排序
+        list.sort((a, b) => {
+          if (statsSortOrder === "desc") {
+            return b.count - a.count || a.code.localeCompare(b.code);
+          } else {
+            return a.count - b.count || a.code.localeCompare(b.code);
+          }
+        });
+
+        const topUsedDevice = list.filter(i => i.count > 0)[0] || null;
+
+        return {
+          list,
+          unassignedCount,
+          totalAssignedUsages,
+          totalReservationsInRange: filteredByDate.length,
+          topUsedDevice
+        };
+      }, [reservations, statsStartDate, statsEndDate, statsCountMode, statsCategoryFilter, statsSearch, statsSortOrder]);
+
+      // 匯出平板統計為 CSV 檔
+      const handleExportTabletStatsCsv = () => {
+        if (tabletUsageStats.list.length === 0) {
+          showNotification("當前無可匯出的統計資料！", "error");
+          return;
+        }
+
+        let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
+        csvContent += `平板借用次數統計表 (${statsStartDate} ~ ${statsEndDate})\r\n`;
+        csvContent += `計算維度: ${statsCountMode === 'sessions' ? '按使用節次加權累計' : '按預約借用次數累計'}\r\n\r\n`;
+        csvContent += "平板代碼/編號,設備類別,累計借用次數/節數\r\n";
+
+        tabletUsageStats.list.forEach(item => {
+          const categoryName = item.category === 'Samsung' ? '三星系列' : item.category === 'iPad' ? 'iPad系列' : item.category === 'Chromebook' ? 'Chromebook系列' : '其他系列';
+          csvContent += `${escapeCsv(item.code)},${escapeCsv(categoryName)},${item.count}\r\n`;
+        });
+
+        csvContent += `\r\n未指派編號紀錄累計,未知,${tabletUsageStats.unassignedCount}\r\n`;
+
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", `Tablet_Usage_Stats_${statsStartDate}_to_${statsEndDate}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        showNotification("平板次數統計報表 (CSV) 下載成功！");
+      };
+
       useEffect(() => {
         if (window.lucide) {
           window.lucide.createIcons();
         }
-      }, [activeTab, isLoading, reservations, isSyncing]);
+      }, [activeTab, isLoading, reservations, isSyncing, formData.dates, statsDateMode, tabletUsageStats]);
 
       return (
         <div className="min-h-screen flex flex-col">
@@ -898,10 +1086,11 @@
               </div>
             </div>
 
-            <div className="flex border-b border-slate-200 mb-6 bg-white p-1 rounded-xl shadow-sm gap-1">
+            {/* TAB Navigation Bar */}
+            <div className="flex border-b border-slate-200 mb-6 bg-white p-1 rounded-xl shadow-sm gap-1 overflow-x-auto">
               <button
                 onClick={() => setActiveTab("book")}
-                className={`flex-1 md:flex-initial flex items-center justify-center gap-2 px-6 py-3 rounded-lg text-sm font-semibold transition-all duration-150 ${
+                className={`flex-1 md:flex-initial flex items-center justify-center gap-2 px-5 py-3 rounded-lg text-sm font-semibold transition-all duration-150 whitespace-nowrap ${
                   activeTab === "book"
                     ? "bg-indigo-600 text-white shadow-sm"
                     : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
@@ -913,7 +1102,7 @@
               
               <button
                 onClick={() => setActiveTab("list")}
-                className={`flex-1 md:flex-initial flex items-center justify-center gap-2 px-6 py-3 rounded-lg text-sm font-semibold transition-all duration-150 ${
+                className={`flex-1 md:flex-initial flex items-center justify-center gap-2 px-5 py-3 rounded-lg text-sm font-semibold transition-all duration-150 whitespace-nowrap ${
                   activeTab === "list"
                     ? "bg-indigo-600 text-white shadow-sm"
                     : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
@@ -927,9 +1116,10 @@
                   </span>
                 )}
               </button>
+              
               <button
                 onClick={() => setActiveTab("timetable")}
-                className={`flex-1 md:flex-initial flex items-center justify-center gap-2 px-6 py-3 rounded-lg text-sm font-semibold transition-all duration-150 ${
+                className={`flex-1 md:flex-initial flex items-center justify-center gap-2 px-5 py-3 rounded-lg text-sm font-semibold transition-all duration-150 whitespace-nowrap ${
                   activeTab === "timetable"
                     ? "bg-indigo-600 text-white shadow-sm"
                     : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
@@ -937,6 +1127,19 @@
               >
                 <i data-lucide="calendar-range" className="w-4 h-4"></i>
                 一週預約狀況課表
+              </button>
+
+              {/* 新增需求 1：平板借用次數統計 分頁 */}
+              <button
+                onClick={() => setActiveTab("stats")}
+                className={`flex-1 md:flex-initial flex items-center justify-center gap-2 px-5 py-3 rounded-lg text-sm font-semibold transition-all duration-150 whitespace-nowrap ${
+                  activeTab === "stats"
+                    ? "bg-indigo-600 text-white shadow-sm"
+                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                }`}
+              >
+                <i data-lucide="bar-chart-3" className="w-4 h-4"></i>
+                平板借用次數統計
               </button>
             </div>
 
@@ -950,7 +1153,7 @@
                     校內平板臨時借用預約單
                   </h2>
                   <p className="text-slate-500 text-xs mt-1.5">
-                    請填寫基本預約資訊。目前可預約之學期日期限制為：<strong className="text-indigo-600">{semesterStart}</strong> ~ <strong className="text-indigo-600">{semesterEnd}</strong>。
+                    請填寫基本預約資訊。<br /><strong className="text-indigo-600">目前可預約之學期日期限制為：{semesterStart}</strong> ~ <strong className="text-indigo-600">{semesterEnd}</strong>。
                   </p>
                 </div>
                 <form onSubmit={handleSubmit} className="p-6 md:p-8 space-y-6">
@@ -963,6 +1166,14 @@
                       required
                       placeholder="您的教育公務信箱 (例如: username@ccjh.ntpc.edu.tw)"
                       value={formData.email}
+                      onFocus={(e) => {
+                        if (!formData.email) {
+                          setFormData(prev => ({ ...prev, email: "@ccjh.ntpc.edu.tw" }));
+                          setTimeout(() => {
+                            e.target.setSelectionRange(0, 0);
+                          }, 0);
+                        }
+                      }}
                       onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
                       className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 text-sm"
                     />
@@ -1007,26 +1218,54 @@
                       ))}
                     </div>
                   </div>
+                  
                   <div className="space-y-1.5">
                     <label className="block text-sm font-bold text-slate-700">
                       借用日期 <span className="text-red-500">*</span>
                     </label>
-                    <input
-                      type="date"
-                      required
-                      min={semesterStart}
-                      max={semesterEnd}
-                      value={formData.date}
-                      onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 text-sm font-mono font-semibold text-slate-800"
-                    />
+                    <div className="flex flex-wrap gap-2 items-center">
+                      {formData.dates.map((dateVal, index) => (
+                        <div key={index} className="flex items-center gap-1">
+                          <input
+                            type="date"
+                            required
+                            min={semesterStart}
+                            max={semesterEnd}
+                            value={dateVal}
+                            onChange={(e) => handleDateChange(index, e.target.value)}
+                            className="px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 text-sm font-mono font-semibold text-slate-800 bg-white"
+                          />
+                          {formData.dates.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveDate(index)}
+                              className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition"
+                              title="移除此日期"
+                            >
+                              <i data-lucide="x" className="w-4 h-4"></i>
+                            </button>
+                          )}
+                        </div>
+                      ))}
+
+                      {formData.dates.length < 5 && (
+                        <button
+                          type="button"
+                          onClick={handleAddDate}
+                          className="p-2.5 bg-transparent text-white hover:text-black/10 transition-colors duration-300 flex items-center justify-center font-bold focus:outline-none"
+                        >
+                          <i data-lucide="plus" className="w-5 h-5"></i>
+                        </button>
+                      )}
+                    </div>
                     <p className="text-[11px] text-indigo-500">
                       * 僅開放：{semesterStart} ~ {semesterEnd} 之間的工作日。
                     </p>
                   </div>
+
                   <div className="space-y-1.5">
                     <label className="block text-sm font-bold text-slate-700">
-                      使用年級或班級 (活動或研習請填其他) <span className="text-red-500">*</span>
+                      使用的年級或班級 (活動或研習 請填其他) <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
@@ -1075,22 +1314,7 @@
                       })}
                     </div>
                   </div>
-                  {/* 在這裡新增 false &&，改為 false 便不會在任何權限下渲染 */}
-                  {false && isAdmin && (
-                    <div className="space-y-1.5 p-4 bg-amber-50 rounded-xl border border-amber-200">
-                      <label className="block text-sm font-bold text-amber-950 flex items-center gap-1.5">
-                        <i data-lucide="settings" className="w-4 h-4 text-amber-700"></i>
-                        管理員專用：指派預約平板組別代碼 (可選)
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="EX: (S)-A(1-30), (I)-B(1-30)"
-                        value={formData.tabletCode}
-                        onChange={(e) => setFormData(prev => ({ ...prev, tabletCode: e.target.value }))}
-                        className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 bg-white text-sm"
-                      />
-                    </div>
-                  )}
+                  
                   {duplicateWarning && (
                     <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
                       <p className="text-sm font-bold text-amber-800 flex items-center gap-1.5">
@@ -1232,6 +1456,10 @@
                           if (res.purpose === "行政業務") purposeBadge = "bg-slate-50 text-slate-700 border-slate-200";
                           if (res.purpose === "社團") purposeBadge = "bg-emerald-50 text-emerald-700 border-emerald-200";
                           if (res.purpose === "其他") purposeBadge = "bg-purple-50 text-purple-700 border-purple-200";
+
+                          const todayStr = formatDate(new Date());
+                          const isOverdue = res.date < todayStr;
+
                           return (
                             <tr key={idx} className="hover:bg-slate-50/50 transition">
                               <td className="p-4">
@@ -1255,7 +1483,6 @@
                                 {res.grade}
                               </td>
                               <td className="p-4">
-                                {/* 【新需求2介面設計】點擊教師名字觸發複製帶入 */}
                                 <button
                                   type="button"
                                   onClick={() => handleCopyTeacherInfo(res)}
@@ -1274,6 +1501,10 @@
                                   {res.tabletCode ? (
                                     <span className="bg-slate-100 text-slate-800 text-xs px-2 py-1 rounded font-mono font-bold border border-slate-200 break-all">
                                       {res.tabletCode}
+                                    </span>
+                                  ) : isOverdue ? (
+                                    <span className="bg-amber-50 text-amber-700 text-xs px-2 py-1 rounded font-bold border border-amber-200">
+                                      未分配已超時
                                     </span>
                                   ) : (
                                     <span className="bg-red-50 text-red-600 text-xs px-2 py-1 rounded font-bold border border-red-100">
@@ -1527,6 +1758,321 @@
                   <div className="flex items-center gap-1.5"><span className="w-3.5 h-3.5 bg-rose-100 rounded border border-rose-200"></span><span>5~7節</span></div>
                   <div className="flex items-center gap-1.5"><span className="w-3.5 h-3.5 bg-emerald-100 rounded border border-emerald-200"></span><span>第8節</span></div>
                 </div>
+              </div>
+            )}
+
+            {/* TAB 4: TABLET USAGE STATS (新增需求 1, 2, 3, 4 + 額外建議) */}
+            {activeTab === "stats" && (
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden animate-fadeIn space-y-6 p-4 md:p-6">
+                
+                {/* 頁面標題與簡述 */}
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-200">
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                      <i data-lucide="bar-chart-3" className="text-indigo-600 w-6 h-6"></i>
+                      平板設備借用次數統計
+                    </h2>
+                    <p className="text-slate-500 text-xs mt-1">
+                      根據預約明細紀錄表中的「分配平板編號」自動累計各組平板借用次數與使用熱度。
+                    </p>
+                  </div>
+                  
+                  <button
+                    onClick={handleExportTabletStatsCsv}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition shadow-sm self-start md:self-auto"
+                  >
+                    <i data-lucide="download" className="w-4 h-4"></i>
+                    匯出統計報表 (CSV)
+                  </button>
+                </div>
+
+                {/* 需求 3 & 4：日期區間與選擇模式控制面板 */}
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-4">
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                    
+                    {/* 選擇模式選單 */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-slate-700 whitespace-nowrap flex items-center gap-1">
+                        <i data-lucide="calendar" className="w-4 h-4 text-indigo-600"></i>
+                        篩選模式：
+                      </span>
+                      <div className="inline-flex p-1 bg-slate-200/80 rounded-xl text-xs font-semibold">
+                        <button
+                          onClick={() => setStatsDateMode("year")}
+                          className={`px-3 py-1.5 rounded-lg transition ${statsDateMode === "year" ? "bg-white text-indigo-700 shadow-sm font-bold" : "text-slate-600 hover:text-slate-900"}`}
+                        >
+                          年份
+                        </button>
+                        <button
+                          onClick={() => setStatsDateMode("month")}
+                          className={`px-3 py-1.5 rounded-lg transition ${statsDateMode === "month" ? "bg-white text-indigo-700 shadow-sm font-bold" : "text-slate-600 hover:text-slate-900"}`}
+                        >
+                          月份
+                        </button>
+                        <button
+                          onClick={() => setStatsDateMode("week")}
+                          className={`px-3 py-1.5 rounded-lg transition ${statsDateMode === "week" ? "bg-white text-indigo-700 shadow-sm font-bold" : "text-slate-600 hover:text-slate-900"}`}
+                        >
+                          週次
+                        </button>
+                        <button
+                          onClick={() => setStatsDateMode("custom")}
+                          className={`px-3 py-1.5 rounded-lg transition ${statsDateMode === "custom" ? "bg-white text-indigo-700 shadow-sm font-bold" : "text-slate-600 hover:text-slate-900"}`}
+                        >
+                          自定義起訖
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* 維度選擇 */}
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs font-bold text-slate-700 whitespace-nowrap">計算方式：</span>
+                      <label className="flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer font-medium">
+                        <input
+                          type="radio"
+                          name="countMode"
+                          checked={statsCountMode === "count"}
+                          onChange={() => setStatsCountMode("count")}
+                          className="text-indigo-600"
+                        />
+                        按預約次數累計 (1次預約=1次)
+                      </label>
+                      <label className="flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer font-medium">
+                        <input
+                          type="radio"
+                          name="countMode"
+                          checked={statsCountMode === "sessions"}
+                          onChange={() => setStatsCountMode("sessions")}
+                          className="text-indigo-600"
+                        />
+                        按節次加權累計 (複選節次累算)
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* 動態日期輸入欄位 */}
+                  <div className="pt-3 border-t border-slate-200/80 flex flex-wrap items-center gap-4 text-xs">
+                    {statsDateMode === "year" && (
+                      <div className="flex items-center gap-2">
+                        <label className="font-bold text-slate-600">選擇年份：</label>
+                        <select
+                          value={statsYear}
+                          onChange={(e) => setStatsYear(e.target.value)}
+                          className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white font-mono font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        >
+                          <option value="2025">2025 年</option>
+                          <option value="2026">2026 年</option>
+                          <option value="2027">2027 年</option>
+                        </select>
+                      </div>
+                    )}
+
+                    {statsDateMode === "month" && (
+                      <div className="flex items-center gap-2">
+                        <label className="font-bold text-slate-600">選擇月份：</label>
+                        <input
+                          type="month"
+                          value={statsMonth}
+                          onChange={(e) => setStatsMonth(e.target.value)}
+                          className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white font-mono font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        />
+                      </div>
+                    )}
+
+                    {statsDateMode === "week" && (
+                      <div className="flex items-center gap-2">
+                        <label className="font-bold text-slate-600">選擇包含該週之任意日期：</label>
+                        <input
+                          type="date"
+                          value={statsWeekBase}
+                          onChange={(e) => setStatsWeekBase(e.target.value)}
+                          className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white font-mono font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        />
+                      </div>
+                    )}
+
+                    {statsDateMode === "custom" && (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <label className="font-bold text-slate-600">起始日期：</label>
+                        <input
+                          type="date"
+                          value={statsStartDate}
+                          onChange={(e) => setStatsStartDate(e.target.value)}
+                          className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white font-mono font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        />
+                        <span className="text-slate-400 font-bold">～</span>
+                        <label className="font-bold text-slate-600">結束日期：</label>
+                        <input
+                          type="date"
+                          value={statsEndDate}
+                          onChange={(e) => setStatsEndDate(e.target.value)}
+                          className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white font-mono font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        />
+                      </div>
+                    )}
+
+                    <div className="ml-auto font-mono text-indigo-800 bg-indigo-50 px-3 py-1 rounded-lg border border-indigo-100 font-semibold">
+                      🗓️ 實際統計計算區間：<strong className="underline">{statsStartDate}</strong> 至 <strong className="underline">{statsEndDate}</strong>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 建議 1：統計總覽指標卡片 */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="p-4 rounded-xl border border-indigo-100 bg-indigo-50/50 flex items-center justify-between">
+                    <div>
+                      <p className="text-xs text-indigo-600 font-bold">區間內總預約筆數</p>
+                      <p className="text-2xl font-black text-indigo-900 mt-0.5">{tabletUsageStats.totalReservationsInRange} <span className="text-xs font-normal text-indigo-700">筆預約</span></p>
+                    </div>
+                    <div className="p-3 bg-indigo-100 text-indigo-700 rounded-lg">
+                      <i data-lucide="file-text" className="w-5 h-5"></i>
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-xl border border-emerald-100 bg-emerald-50/50 flex items-center justify-between">
+                    <div>
+                      <p className="text-xs text-emerald-600 font-bold">最高借用熱門設備編號</p>
+                      <p className="text-xl font-black text-emerald-900 mt-0.5 font-mono">
+                        {tabletUsageStats.topUsedDevice ? tabletUsageStats.topUsedDevice.code : "無紀錄"}
+                      </p>
+                      {tabletUsageStats.topUsedDevice && (
+                        <p className="text-[11px] text-emerald-700">
+                          累計借用：<strong>{tabletUsageStats.topUsedDevice.count}</strong> {statsCountMode === 'sessions' ? '節' : '次'}
+                        </p>
+                      )}
+                    </div>
+                    <div className="p-3 bg-emerald-100 text-emerald-700 rounded-lg">
+                      <i data-lucide="flame" className="w-5 h-5"></i>
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-xl border border-amber-100 bg-amber-50/50 flex items-center justify-between">
+                    <div>
+                      <p className="text-xs text-amber-600 font-bold">區間內未指派編號紀錄</p>
+                      <p className="text-2xl font-black text-amber-900 mt-0.5">{tabletUsageStats.unassignedCount} <span className="text-xs font-normal text-amber-700">筆未登記</span></p>
+                    </div>
+                    <div className="p-3 bg-amber-100 text-amber-700 rounded-lg">
+                      <i data-lucide="help-circle" className="w-5 h-5"></i>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 建議 3：分類篩選與搜尋排序控制區域 */}
+                <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 p-3 bg-slate-100/70 rounded-xl">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-xs font-bold text-slate-500 mr-1">設備類別:</span>
+                    <button
+                      onClick={() => setStatsCategoryFilter("ALL")}
+                      className={`px-3 py-1 text-xs rounded-lg font-bold transition ${statsCategoryFilter === "ALL" ? "bg-indigo-600 text-white" : "bg-white text-slate-600 hover:bg-slate-200"}`}
+                    >
+                      全部類別
+                    </button>
+                    <button
+                      onClick={() => setStatsCategoryFilter("Samsung")}
+                      className={`px-3 py-1 text-xs rounded-lg font-bold transition ${statsCategoryFilter === "Samsung" ? "bg-indigo-600 text-white" : "bg-white text-slate-600 hover:bg-slate-200"}`}
+                    >
+                      📱 三星系列 (S)
+                    </button>
+                    <button
+                      onClick={() => setStatsCategoryFilter("iPad")}
+                      className={`px-3 py-1 text-xs rounded-lg font-bold transition ${statsCategoryFilter === "iPad" ? "bg-rose-600 text-white" : "bg-white text-slate-600 hover:bg-slate-200"}`}
+                    >
+                      🍎 iPad系列 (I)
+                    </button>
+                    <button
+                      onClick={() => setStatsCategoryFilter("Chromebook")}
+                      className={`px-3 py-1 text-xs rounded-lg font-bold transition ${statsCategoryFilter === "Chromebook" ? "bg-emerald-600 text-white" : "bg-white text-slate-600 hover:bg-slate-200"}`}
+                    >
+                      💻 Chromebook (CB)
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      placeholder="搜尋平板編號..."
+                      value={statsSearch}
+                      onChange={(e) => setStatsSearch(e.target.value)}
+                      className="px-3 py-1.5 rounded-lg border border-slate-300 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    />
+                    <select
+                      value={statsSortOrder}
+                      onChange={(e) => setStatsSortOrder(e.target.value)}
+                      className="px-3 py-1.5 rounded-lg border border-slate-300 text-xs bg-white font-bold text-slate-700"
+                    >
+                      <option value="desc">借用次數：高 ➔ 低</option>
+                      <option value="asc">借用次數：低 ➔ 高</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* 需求 2：統計結果數據列表 */}
+                <div className="overflow-x-auto border border-slate-200 rounded-xl">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-100 text-slate-700 text-xs font-bold border-b border-slate-200">
+                        <th className="p-3.5">平板標號 / 組別代碼</th>
+                        <th className="p-3.5">設備類別</th>
+                        <th className="p-3.5">區間內累計借用次數</th>
+                        <th className="p-3.5">借用使用熱度占比</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 text-xs font-medium">
+                      {tabletUsageStats.list.length > 0 ? (
+                        tabletUsageStats.list.map((item, idx) => {
+                          const totalUsages = tabletUsageStats.totalAssignedUsages || 1;
+                          const percent = Math.round((item.count / totalUsages) * 100);
+
+                          let categoryBadge = "bg-slate-100 text-slate-700 border-slate-200";
+                          if (item.category === "Samsung") categoryBadge = "bg-indigo-50 text-indigo-700 border-indigo-200";
+                          if (item.category === "iPad") categoryBadge = "bg-rose-50 text-rose-700 border-rose-200";
+                          if (item.category === "Chromebook") categoryBadge = "bg-emerald-50 text-emerald-700 border-emerald-200";
+
+                          return (
+                            <tr key={idx} className="hover:bg-slate-50 transition">
+                              <td className="p-3.5 font-mono font-bold text-slate-800 text-sm">
+                                {item.code}
+                              </td>
+                              <td className="p-3.5">
+                                <span className={`px-2.5 py-0.5 rounded-full border text-[11px] font-semibold ${categoryBadge}`}>
+                                  {item.category === "Samsung" ? "三星系列" : item.category === "iPad" ? "iPad系列" : item.category === "Chromebook" ? "Chromebook" : "其他"}
+                                </span>
+                              </td>
+                              <td className="p-3.5">
+                                <span className={`text-sm font-black font-mono ${item.count > 0 ? "text-indigo-600" : "text-slate-300"}`}>
+                                  {item.count}
+                                </span>
+                                <span className="text-[11px] text-slate-400 ml-1">
+                                  {statsCountMode === 'sessions' ? '節' : '次'}
+                                </span>
+                              </td>
+                              <td className="p-3.5">
+                                <div className="flex items-center gap-3 max-w-xs">
+                                  <div className="flex-1 bg-slate-100 rounded-full h-2 overflow-hidden border border-slate-200">
+                                    <div 
+                                      className={`h-full transition-all duration-300 ${item.count > 0 ? "bg-indigo-600" : "bg-transparent"}`}
+                                      style={{ width: `${percent}%` }}
+                                    ></div>
+                                  </div>
+                                  <span className="text-[10px] font-mono font-bold text-slate-500 w-8 text-right">
+                                    {percent}%
+                                  </span>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      ) : (
+                        <tr>
+                          <td colSpan="4" className="p-8 text-center text-slate-400">
+                            沒有搜尋到符合條件的平板統計資料。
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
               </div>
             )}
           </main>

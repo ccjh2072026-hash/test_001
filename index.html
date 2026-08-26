@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>平板借用預約系統 - 142-1151學期</title>
+  <title>平板借用預約系統 - 115學期</title>
   
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
@@ -104,11 +104,11 @@
       const [isAuthLoading, setIsAuthLoading] = useState(false);
       const [systemTitle, setSystemTitle] = useState(() => {
         const saved = localStorage.getItem("ccjh_tablet_system_title_v6");
-        return saved ? saved : "142-1151學年度暑期校內平板臨時借用預約";
+        return saved ? saved : "115學年度校內平板借用預約";
       });
       const [systemSubtitle, setSystemSubtitle] = useState(() => {
         const saved = localStorage.getItem("ccjh_tablet_system_subtitle_v6");
-        return saved ? saved : "🔔 暑期預約～請於 7/8 前預約。\n🔔 提醒老師務必協助於課堂使用時拍照紀錄，並將相關照片、成果、成效評估等資料上傳。";
+        return saved ? saved : "🔔 提醒老師務必協助於課堂使用時拍照紀錄，並將相關照片、成果、成效評估等資料上傳。";
       });
 
       const DEFAULT_SEMESTER_START = "2026-07-01";
@@ -152,17 +152,23 @@
       const [wordCustomStart, setWordCustomStart] = useState("2026-07-20");
       const [wordCustomEnd, setWordCustomEnd] = useState("2026-07-25");
 
-      // 需求 3 & 4 相關 State: 統計分頁的起訖日期與選擇模式
+      // 統計分頁 State
       const [statsDateMode, setStatsDateMode] = useState("year"); // year | month | week | custom
       const [statsYear, setStatsYear] = useState(() => new Date().getFullYear().toString());
       const [statsMonth, setStatsMonth] = useState(() => `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`);
       const [statsWeekBase, setStatsWeekBase] = useState(() => formatDate(new Date()));
       const [statsStartDate, setStatsStartDate] = useState("2026-01-01");
       const [statsEndDate, setStatsEndDate] = useState("2026-12-31");
-      const [statsCountMode, setStatsCountMode] = useState("count"); // count: 依借用次數 | sessions: 依使用節次累計
-      const [statsCategoryFilter, setStatsCategoryFilter] = useState("ALL"); // ALL | Samsung | iPad | Chromebook | Other
+      const [statsCountMode, setStatsCountMode] = useState("count"); 
+      const [statsCategoryFilter, setStatsCategoryFilter] = useState("ALL"); 
       const [statsSearch, setStatsSearch] = useState("");
-      const [statsSortOrder, setStatsSortOrder] = useState("desc"); // desc | asc
+      const [statsSortOrder, setStatsSortOrder] = useState("desc");
+
+      useEffect(() => {
+        if (!isAdmin && (activeTab === "list" || activeTab === "stats")) {
+          setActiveTab("book");
+        }
+      }, [isAdmin, activeTab]);
 
       // 根據模式動態更新統計的起訖日期
       useEffect(() => {
@@ -305,11 +311,28 @@
       const handleCheckboxChange = (sessionName) => {
         setFormData(prev => {
           const alreadySelected = prev.sessions.includes(sessionName);
+          if (!alreadySelected && prev.sessions.length >= 4) {
+            showNotification("單次預約最多僅能勾選 4 個節次！", "error");
+            return prev;
+          }
           const newSessions = alreadySelected
             ? prev.sessions.filter(s => s !== sessionName)
             : [...prev.sessions, sessionName];
           return { ...prev, sessions: newSessions };
         });
+      };
+
+      const handleGradeChange = (e) => {
+        const val = e.target.value;
+        if (val === "其他") {
+          setFormData(prev => ({ ...prev, grade: "其他" }));
+          return;
+        }
+        let digitsOnly = val.replace(/\D/g, "");
+        if (digitsOnly.length > 3) {
+          digitsOnly = digitsOnly.slice(0, 3);
+        }
+        setFormData(prev => ({ ...prev, grade: digitsOnly }));
       };
 
       const handleCopyTeacherInfo = (res) => {
@@ -451,7 +474,11 @@
             tabletCode: ""
           });
 
-          setActiveTab("list");
+          if (isAdmin) {
+            setActiveTab("list");
+          } else {
+            setActiveTab("timetable");
+          }
         } catch (error) {
           console.error("回存 GAS 失敗:", error);
           showNotification("連線 Google 服務失敗，請檢查網路或稍後再試！", "error");
@@ -789,7 +816,10 @@
             docHtml += `<td class='sidebar-header ${sessionBgClass}'>${session.name}<br/><span style='font-size:7.5pt; font-weight:normal; color:#475569;'>${session.time}</span></td>`;
             daysOfWeek.forEach(day => {
               const cellReservations = reservations.filter(res => 
-                res.date === day.dateStr && res.sessions.includes(session.name)
+                res.date === day.dateStr && 
+                res.sessions.includes(session.name) &&
+                res.tabletCode && 
+                res.tabletCode.trim() !== ""
               );
               docHtml += `<td>`;
               if (cellReservations.length > 0) {
@@ -799,7 +829,7 @@
                       <div class='card-title'>🏫 班級: ${res.grade}</div>
                       <div class='card-detail'>
                         <b>👤 老師:</b> ${res.teacher}<br/>
-                        <b>🏷️ 平板編號:</b> ${res.tabletCode || '⚠️ 未指派'}
+                        <b>🏷️ 平板編號:</b> ${res.tabletCode}
                       </div>
                     </div>
                   `;
@@ -855,7 +885,7 @@
         return { total, unassigned, upcoming, activeTeacher };
       }, [reservations]);
 
-      // 需求 2、3、4 & 建議 1、2、3、4 的核心計算邏輯：平板次數統計
+      // 平板次數統計邏輯
       const tabletUsageStats = useMemo(() => {
         const counts = {};
         let unassignedCount = 0;
@@ -872,7 +902,6 @@
           if (!r.tabletCode || r.tabletCode.trim() === "") {
             unassignedCount += multiplier;
           } else {
-            // 解析多組平板編號 (例如： "(S)-A(1-30), (I)-B(1-30)")
             const codes = r.tabletCode.split(',').map(c => c.trim()).filter(Boolean);
             if (codes.length === 0) {
               unassignedCount += multiplier;
@@ -885,7 +914,6 @@
           }
         });
 
-        // 整理所有預設已知編號與已計算編號，避免有設備完全沒顯示
         const allKnownCodes = [
           ...SAMSUNG_CODES,
           ...IPAD_CODES,
@@ -907,18 +935,15 @@
           };
         });
 
-        // 分類篩選
         if (statsCategoryFilter !== "ALL") {
           list = list.filter(item => item.category === statsCategoryFilter);
         }
 
-        // 搜尋篩選
         if (statsSearch.trim()) {
           const q = statsSearch.trim().toLowerCase();
           list = list.filter(item => item.code.toLowerCase().includes(q));
         }
 
-        // 排序
         list.sort((a, b) => {
           if (statsSortOrder === "desc") {
             return b.count - a.count || a.code.localeCompare(b.code);
@@ -938,7 +963,6 @@
         };
       }, [reservations, statsStartDate, statsEndDate, statsCountMode, statsCategoryFilter, statsSearch, statsSortOrder]);
 
-      // 匯出平板統計為 CSV 檔
       const handleExportTabletStatsCsv = () => {
         if (tabletUsageStats.list.length === 0) {
           showNotification("當前無可匯出的統計資料！", "error");
@@ -971,7 +995,7 @@
         if (window.lucide) {
           window.lucide.createIcons();
         }
-      }, [activeTab, isLoading, reservations, isSyncing, formData.dates, statsDateMode, tabletUsageStats]);
+      }, [activeTab, isLoading, reservations, isSyncing, formData.dates, statsDateMode, tabletUsageStats, isAdmin]);
 
       return (
         <div className="min-h-screen flex flex-col">
@@ -1099,24 +1123,7 @@
                 <i data-lucide="file-plus-2" className="w-4 h-4"></i>
                 填寫預約表單
               </button>
-              
-              <button
-                onClick={() => setActiveTab("list")}
-                className={`flex-1 md:flex-initial flex items-center justify-center gap-2 px-5 py-3 rounded-lg text-sm font-semibold transition-all duration-150 whitespace-nowrap ${
-                  activeTab === "list"
-                    ? "bg-indigo-600 text-white shadow-sm"
-                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                }`}
-              >
-                <i data-lucide="list-collapse" className="w-4 h-4"></i>
-                預約明細紀錄表
-                {stats.unassigned > 0 && (
-                  <span className="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full ml-1 font-bold">
-                    {stats.unassigned}
-                  </span>
-                )}
-              </button>
-              
+
               <button
                 onClick={() => setActiveTab("timetable")}
                 className={`flex-1 md:flex-initial flex items-center justify-center gap-2 px-5 py-3 rounded-lg text-sm font-semibold transition-all duration-150 whitespace-nowrap ${
@@ -1128,19 +1135,39 @@
                 <i data-lucide="calendar-range" className="w-4 h-4"></i>
                 一週預約狀況課表
               </button>
+              
+              {isAdmin && (
+                <button
+                  onClick={() => setActiveTab("list")}
+                  className={`flex-1 md:flex-initial flex items-center justify-center gap-2 px-5 py-3 rounded-lg text-sm font-semibold transition-all duration-150 whitespace-nowrap ${
+                    activeTab === "list"
+                      ? "bg-indigo-600 text-white shadow-sm"
+                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                  }`}
+                >
+                  <i data-lucide="list-collapse" className="w-4 h-4"></i>
+                  預約明細紀錄表
+                  {stats.unassigned > 0 && (
+                    <span className="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full ml-1 font-bold">
+                      {stats.unassigned}
+                    </span>
+                  )}
+                </button>
+              )}
 
-              {/* 新增需求 1：平板借用次數統計 分頁 */}
-              <button
-                onClick={() => setActiveTab("stats")}
-                className={`flex-1 md:flex-initial flex items-center justify-center gap-2 px-5 py-3 rounded-lg text-sm font-semibold transition-all duration-150 whitespace-nowrap ${
-                  activeTab === "stats"
-                    ? "bg-indigo-600 text-white shadow-sm"
-                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                }`}
-              >
-                <i data-lucide="bar-chart-3" className="w-4 h-4"></i>
-                平板借用次數統計
-              </button>
+              {isAdmin && (
+                <button
+                  onClick={() => setActiveTab("stats")}
+                  className={`flex-1 md:flex-initial flex items-center justify-center gap-2 px-5 py-3 rounded-lg text-sm font-semibold transition-all duration-150 whitespace-nowrap ${
+                    activeTab === "stats"
+                      ? "bg-indigo-600 text-white shadow-sm"
+                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                  }`}
+                >
+                  <i data-lucide="bar-chart-3" className="w-4 h-4"></i>
+                  平板借用統計
+                </button>
+              )}
             </div>
 
             {/* TAB 1: BOOK FORM */}
@@ -1252,7 +1279,7 @@
                         <button
                           type="button"
                           onClick={handleAddDate}
-                          className="p-2.5 bg-transparent text-white hover:text-black/10 transition-colors duration-300 flex items-center justify-center font-bold focus:outline-none"
+                          className="p-2.5 bg-white hover:bg-white text-white hover:text-[#CCCCCC] transition-colors duration-300 flex items-center justify-center font-bold focus:outline-none rounded-lg"
                         >
                           <i data-lucide="plus" className="w-5 h-5"></i>
                         </button>
@@ -1270,20 +1297,32 @@
                     <input
                       type="text"
                       required
-                      placeholder="EX: 701、801 或 806教室"
+                      placeholder="例如: 701、806 或 其他 (最多 3 位數字)"
                       value={formData.grade}
-                      onChange={(e) => setFormData(prev => ({ ...prev, grade: e.target.value }))}
+                      onChange={handleGradeChange}
                       className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 text-sm"
                     />
+                    <p className="text-[11px] text-slate-400">
+                      * 僅允許輸入最多 3 個數字（如 701、806）或「其他」。
+                    </p>
                   </div>
+
                   <div className="space-y-1.5">
-                    <label className="block text-sm font-bold text-slate-700">
-                      使用節次 (可複選) <span className="text-red-500">*</span>
-                    </label>
+                    <div className="flex items-center justify-between">
+                      <label className="block text-sm font-bold text-slate-700">
+                        使用節次 (最多可勾選 4 個節次) <span className="text-red-500">*</span>
+                      </label>
+                      <span className={`text-xs font-semibold ${formData.sessions.length >= 4 ? 'text-amber-600 font-bold' : 'text-slate-400'}`}>
+                        已選擇 {formData.sessions.length} / 4 節
+                      </span>
+                    </div>
                     
                     <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
                       {SESSIONS.map((session, idx) => {
                         const isSelected = formData.sessions.includes(session.name);
+                        const isMaxReached = formData.sessions.length >= 4 && !isSelected;
+                        const isDisabled = !session.reservable || isMaxReached;
+
                         return (
                           <label
                             key={idx}
@@ -1292,13 +1331,15 @@
                                 ? "bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed"
                                 : isSelected 
                                   ? "border-indigo-600 bg-indigo-50/70 text-indigo-900 font-semibold shadow-sm cursor-pointer" 
-                                  : "border-slate-200 hover:bg-slate-50 text-slate-600 cursor-pointer"
+                                  : isMaxReached
+                                    ? "bg-slate-50 border-slate-200 text-slate-300 cursor-not-allowed"
+                                    : "border-slate-200 hover:bg-slate-50 text-slate-600 cursor-pointer"
                             }`}
                           >
                             <input
                               type="checkbox"
                               checked={isSelected}
-                              disabled={!session.reservable}
+                              disabled={isDisabled}
                               onChange={() => handleCheckboxChange(session.name)}
                               className="sr-only"
                             />
@@ -1307,7 +1348,7 @@
                               {session.name}
                             </span>
                             <span className="text-[10px] text-slate-400 mt-0.5">
-                              {session.reservable ? session.time : "不開放預約"}
+                              {!session.reservable ? "不開放預約" : isMaxReached ? "已達4節上限" : session.time}
                             </span>
                           </label>
                         );
@@ -1367,7 +1408,7 @@
             )}
 
             {/* TAB 2: DETAILED LIST */}
-            {activeTab === "list" && (
+            {activeTab === "list" && isAdmin && (
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden animate-fadeIn">
                 <div className="p-4 md:p-6 bg-slate-50 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div>
@@ -1389,19 +1430,14 @@
                       <i data-lucide="refresh-cw" className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`}></i>
                       重新整理
                     </button>
-                    {isAdmin ? (
+                    {isPrimaryAdmin && (
                       <button
                         onClick={handleCsvExport}
                         className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition shadow-sm"
                       >
                         <i data-lucide="download" className="w-4 h-4"></i>
-                        匯出篩選結果 (管理員限用)
+                        匯出篩選結果
                       </button>
-                    ) : (
-                      <div className="text-slate-400 text-xs flex items-center gap-1 px-3 py-1.5 bg-slate-100 rounded-lg">
-                        <i data-lucide="info" className="w-3.5 h-3.5"></i>
-                        <span>資料匯出僅供管理員登入操作</span>
-                      </div>
                     )}
                   </div>
                 </div>
@@ -1513,10 +1549,10 @@
                                   )}
                                   <button 
                                     onClick={() => openTabletAssign(res)}
-                                    className={`p-1 rounded transition ${isAdmin ? "text-indigo-600 hover:bg-indigo-50" : "text-slate-300 hover:text-indigo-600"}`}
-                                    title={isAdmin ? "指派平板編號" : "登入管理員以設定平板編號"}
+                                    className="p-1 rounded transition text-indigo-600 hover:bg-indigo-50"
+                                    title="指派平板編號"
                                   >
-                                    <i data-lucide={isAdmin ? "settings" : "lock"} className="w-3.5 h-3.5"></i>
+                                    <i data-lucide="settings" className="w-3.5 h-3.5"></i>
                                   </button>
                                 </div>
                               </td>
@@ -1533,7 +1569,7 @@
                                 ) : (
                                   <span className="text-slate-400 text-xs flex items-center justify-center gap-1 italic" title="次要管理員帳號不具備刪除紀錄權限">
                                     <i data-lucide="lock" className="w-3.5 h-3.5"></i>
-                                    {isAdmin ? "無刪除權限" : "需管理者"}
+                                    無刪除權限
                                   </span>
                                 )}
                               </td>
@@ -1553,9 +1589,6 @@
                     </tbody>
                   </table>
                 </div>
-                <div className="bg-slate-50 border-t border-slate-200 p-4 text-right text-xs text-slate-400 font-medium">
-                  管理權限鎖定：此管理員帳號登入時僅開放「指派平板編號」，無法刪除預約紀錄。
-                </div>
               </div>
             )}
 
@@ -1566,10 +1599,10 @@
                   <div>
                     <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                       <span className="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>
-                      平板使用狀況週課表 (星期一 至 星期六)
+                      平板使用狀況週課表 (僅顯示已指派平板編號之紀錄)
                     </h2>
                     <p className="text-slate-500 text-xs mt-0.5">
-                      💡 提示：點擊週課表中任何【可借用】空白欄位即可直接帶入預約。本課表依照每日各節次列出對應預約狀況。
+                      💡 提示：點擊週課表中任何【可借用】空白欄位即可帶入預約。本課表僅顯示已被指派平板編號之預約。
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-3">
@@ -1611,13 +1644,15 @@
                   </div>
                   
                   {isAdmin ? (
-                    <button
-                      onClick={handleWordExportClick}
-                      className="bg-white hover:bg-blue-50 text-blue-700 border border-blue-300 px-3 py-1 rounded-lg text-xs font-bold inline-flex items-center gap-1 transition shadow-sm"
-                    >
-                      <i data-lucide="file-text" className="w-3.5 h-3.5"></i>
-                      匯出課表為 Word / Google Doc
-                    </button>
+                    isPrimaryAdmin ? (
+                      <button
+                        onClick={handleWordExportClick}
+                        className="bg-white hover:bg-blue-50 text-blue-700 border border-blue-300 px-3 py-1 rounded-lg text-xs font-bold inline-flex items-center gap-1 transition shadow-sm"
+                      >
+                        <i data-lucide="file-text" className="w-3.5 h-3.5"></i>
+                        匯出課表為 Word / Google Doc
+                      </button>
+                    ) : null
                   ) : (
                     <span className="text-slate-400 text-[11px]">課表Word匯出需管理者登入</span>
                   )}
@@ -1670,7 +1705,10 @@
                     {currentWeekDays.map((day, dIdx) => 
                       SESSIONS.map((session, sIdx) => {
                         const cellReservations = reservations.filter(res => 
-                          res.date === day.dateStr && res.sessions.includes(session.name)
+                          res.date === day.dateStr && 
+                          res.sessions.includes(session.name) &&
+                          res.tabletCode && 
+                          res.tabletCode.trim() !== ""
                         );
                         const hasReservations = cellReservations.length > 0;
                         return (
@@ -1708,22 +1746,18 @@
                                         </div>
                                       </div>
                                       <div className="mt-2 pt-1 border-t border-dashed border-current/15 flex items-start justify-between gap-1">
-                                        {res.tabletCode ? (
-                                          <span className="bg-white/85 px-1.5 py-0.5 rounded text-[9px] text-slate-700 font-bold border border-slate-200/50 font-mono break-all leading-normal flex-1">
-                                            🏷️ {res.tabletCode}
-                                          </span>
-                                        ) : (
-                                          <span className="bg-red-100 text-red-700 px-1 py-0.5 rounded text-[9px] font-bold border border-red-200 flex-shrink-0">
-                                            ⚠️ 未指派
-                                          </span>
+                                        <span className="bg-white/85 px-1.5 py-0.5 rounded text-[9px] text-slate-700 font-bold border border-slate-200/50 font-mono break-all leading-normal flex-1">
+                                          🏷️ {res.tabletCode}
+                                        </span>
+                                        {isAdmin && (
+                                          <button
+                                            onClick={() => openTabletAssign(res)}
+                                            className="p-1 rounded-lg transition ml-auto flex-shrink-0 mt-0.5 bg-indigo-600 hover:bg-indigo-700 text-white"
+                                            title="管理端：修改平板編號"
+                                          >
+                                            <i data-lucide="edit-3" className="w-2.5 h-2.5"></i>
+                                          </button>
                                         )}
-                                        <button
-                                          onClick={() => openTabletAssign(res)}
-                                          className={`p-1 rounded-lg transition ml-auto flex-shrink-0 mt-0.5 ${isAdmin ? "bg-indigo-600 hover:bg-indigo-700 text-white" : "bg-slate-200 hover:bg-slate-300 text-slate-500"}`}
-                                          title={isAdmin ? "管理端：指派平板編號" : "登入管理員以設定平板"}
-                                        >
-                                          <i data-lucide={isAdmin ? "edit-3" : "lock"} className="w-2.5 h-2.5"></i>
-                                        </button>
                                       </div>
                                     </div>
                                   );
@@ -1761,11 +1795,10 @@
               </div>
             )}
 
-            {/* TAB 4: TABLET USAGE STATS (新增需求 1, 2, 3, 4 + 額外建議) */}
-            {activeTab === "stats" && (
+            {/* TAB 4: TABLET STATS */}
+            {activeTab === "stats" && isAdmin && (
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden animate-fadeIn space-y-6 p-4 md:p-6">
                 
-                {/* 頁面標題與簡述 */}
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-200">
                   <div>
                     <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
@@ -1777,20 +1810,20 @@
                     </p>
                   </div>
                   
-                  <button
-                    onClick={handleExportTabletStatsCsv}
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition shadow-sm self-start md:self-auto"
-                  >
-                    <i data-lucide="download" className="w-4 h-4"></i>
-                    匯出統計報表 (CSV)
-                  </button>
+                  {isPrimaryAdmin && (
+                    <button
+                      onClick={handleExportTabletStatsCsv}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition shadow-sm self-start md:self-auto"
+                    >
+                      <i data-lucide="download" className="w-4 h-4"></i>
+                      匯出統計報表 (CSV)
+                    </button>
+                  )}
                 </div>
 
-                {/* 需求 3 & 4：日期區間與選擇模式控制面板 */}
                 <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-4">
                   <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                     
-                    {/* 選擇模式選單 */}
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-bold text-slate-700 whitespace-nowrap flex items-center gap-1">
                         <i data-lucide="calendar" className="w-4 h-4 text-indigo-600"></i>
@@ -1824,7 +1857,6 @@
                       </div>
                     </div>
 
-                    {/* 維度選擇 */}
                     <div className="flex items-center gap-3">
                       <span className="text-xs font-bold text-slate-700 whitespace-nowrap">計算方式：</span>
                       <label className="flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer font-medium">
@@ -1850,7 +1882,6 @@
                     </div>
                   </div>
 
-                  {/* 動態日期輸入欄位 */}
                   <div className="pt-3 border-t border-slate-200/80 flex flex-wrap items-center gap-4 text-xs">
                     {statsDateMode === "year" && (
                       <div className="flex items-center gap-2">
@@ -1917,7 +1948,6 @@
                   </div>
                 </div>
 
-                {/* 建議 1：統計總覽指標卡片 */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div className="p-4 rounded-xl border border-indigo-100 bg-indigo-50/50 flex items-center justify-between">
                     <div>
@@ -1957,7 +1987,6 @@
                   </div>
                 </div>
 
-                {/* 建議 3：分類篩選與搜尋排序控制區域 */}
                 <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 p-3 bg-slate-100/70 rounded-xl">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span className="text-xs font-bold text-slate-500 mr-1">設備類別:</span>
@@ -2006,7 +2035,6 @@
                   </div>
                 </div>
 
-                {/* 需求 2：統計結果數據列表 */}
                 <div className="overflow-x-auto border border-slate-200 rounded-xl">
                   <table className="w-full text-left border-collapse">
                     <thead>
@@ -2081,7 +2109,7 @@
           {showLoginModal && (
             <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-fadeIn">
               <div className="bg-white rounded-2xl border border-slate-100 shadow-2xl max-w-sm w-full overflow-hidden transform transition-all">
-                <div className="p-6 border-b border-slate-155 bg-slate-50 flex items-center justify-between">
+                <div className="p-6 border-b border-slate-150 bg-slate-50 flex items-center justify-between">
                   <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
                     <i data-lucide="lock" className="text-indigo-600 w-5 h-5"></i>
                     管理員安全登入
@@ -2145,64 +2173,247 @@
             </div>
           )}
 
-          {/* EXPORT OPTIONS MODAL */}
-          {showExportModal && isAdmin && (
-            <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-              <div className="bg-white rounded-2xl border border-slate-100 shadow-2xl max-w-sm w-full overflow-hidden transform transition-all">
+          {/* TABLET ASSIGNMENT MODAL */}
+          {tabletAssignModal && (
+            <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+              <div className="bg-white rounded-2xl border border-slate-100 shadow-2xl max-w-xl w-full overflow-hidden transform transition-all">
                 <div className="p-5 border-b border-slate-150 bg-slate-50 flex items-center justify-between">
-                  <h3 className="text-base font-bold text-slate-800 flex items-center gap-1.5">
-                    <i data-lucide="download" className="text-indigo-600 w-4 h-4"></i>
-                    選擇要匯出的資料範圍 (CSV)
+                  <div>
+                    <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                      <i data-lucide="settings" className="text-indigo-600 w-5 h-5"></i>
+                      指派/編輯平板編號
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      【{tabletAssignModal.date}】{tabletAssignModal.teacher} 老師 ({tabletAssignModal.grade})
+                    </p>
+                  </div>
+                  <button onClick={() => setTabletAssignModal(null)} className="text-slate-400 hover:text-slate-600 transition">
+                    <i data-lucide="x" className="w-5 h-5"></i>
+                  </button>
+                </div>
+
+                <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-700">
+                      已選擇的平板編號 (可手動輸入或直接點選下方選單)：
+                    </label>
+                    <input 
+                      type="text"
+                      value={tempTabletCode}
+                      onChange={(e) => setTempTabletCode(e.target.value)}
+                      placeholder="例如: (S)-A(1-30), (I)-B(1-30)"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  <div className="space-y-3 pt-2">
+                    <span className="text-xs font-bold text-slate-600 block">快速點選可指派編號：</span>
+
+                    {/* 三星系列 */}
+                    <div>
+                      <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded mb-1.5 inline-block">
+                        📱 三星系列 (Samsung)
+                      </span>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                        {SAMSUNG_CODES.map((code) => {
+                          const isOccupied = occupiedTabletCodes.has(code);
+                          const isSelected = tempTabletCode.includes(code);
+                          return (
+                            <button
+                              key={code}
+                              type="button"
+                              disabled={isOccupied}
+                              onClick={() => toggleTabletCodeSelect(code)}
+                              className={`px-2 py-1.5 rounded-lg text-xs font-mono transition border text-left truncate ${
+                                isOccupied
+                                  ? "bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed line-through"
+                                  : isSelected
+                                    ? "bg-indigo-600 text-white font-bold border-indigo-600 shadow-sm"
+                                    : "bg-white text-slate-700 border-slate-200 hover:bg-indigo-50 hover:border-indigo-300"
+                              }`}
+                            >
+                              {code}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* iPad 系列 */}
+                    <div>
+                      <span className="text-[11px] font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded mb-1.5 inline-block">
+                        🍎 iPad 系列
+                      </span>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                        {IPAD_CODES.map((code) => {
+                          const isOccupied = occupiedTabletCodes.has(code);
+                          const isSelected = tempTabletCode.includes(code);
+                          return (
+                            <button
+                              key={code}
+                              type="button"
+                              disabled={isOccupied}
+                              onClick={() => toggleTabletCodeSelect(code)}
+                              className={`px-2 py-1.5 rounded-lg text-xs font-mono transition border text-left truncate ${
+                                isOccupied
+                                  ? "bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed line-through"
+                                  : isSelected
+                                    ? "bg-rose-600 text-white font-bold border-rose-600 shadow-sm"
+                                    : "bg-white text-slate-700 border-slate-200 hover:bg-rose-50 hover:border-rose-300"
+                              }`}
+                            >
+                              {code}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Chromebook 系列 */}
+                    <div>
+                      <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded mb-1.5 inline-block">
+                        💻 Chromebook 系列
+                      </span>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                        {CHROMEBOOK_CODES.map((code) => {
+                          const isOccupied = occupiedTabletCodes.has(code);
+                          const isSelected = tempTabletCode.includes(code);
+                          return (
+                            <button
+                              key={code}
+                              type="button"
+                              disabled={isOccupied}
+                              onClick={() => toggleTabletCodeSelect(code)}
+                              className={`px-2 py-1.5 rounded-lg text-xs font-mono transition border text-left truncate ${
+                                isOccupied
+                                  ? "bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed line-through"
+                                  : isSelected
+                                    ? "bg-emerald-600 text-white font-bold border-emerald-600 shadow-sm"
+                                    : "bg-white text-slate-700 border-slate-200 hover:bg-emerald-50 hover:border-emerald-300"
+                              }`}
+                            >
+                              {code}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-slate-50 border-t border-slate-150 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTabletAssignModal(null)}
+                    className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition"
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    onClick={saveTabletAssign}
+                    className="px-5 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white shadow-md transition"
+                  >
+                    儲存指派結果
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* DELETE CONFIRM MODAL */}
+          {deleteConfirmModal && (
+            <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+              <div className="bg-white rounded-2xl border border-slate-100 shadow-2xl max-w-sm w-full overflow-hidden transform transition-all p-6 text-center">
+                <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <i data-lucide="alert-triangle" className="w-6 h-6"></i>
+                </div>
+                <h3 className="text-lg font-bold text-slate-800">確認取消此筆預約？</h3>
+                <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+                  將取消 <strong className="text-slate-800">{deleteConfirmModal.teacher}</strong> 老師於 <strong className="text-slate-800">{deleteConfirmModal.date}</strong> ({deleteConfirmModal.sessions.join(", ")}) 的平板借用紀錄。
+                </p>
+                <div className="mt-6 flex items-center justify-center gap-3">
+                  <button
+                    onClick={() => setDeleteConfirmModal(null)}
+                    className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition"
+                  >
+                    保留預約
+                  </button>
+                  <button
+                    onClick={confirmDelete}
+                    className="px-4 py-2 rounded-xl text-xs font-semibold bg-red-600 hover:bg-red-700 text-white shadow-md transition"
+                  >
+                    確認取消刪除
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* EXPORT CSV MODAL */}
+          {showExportModal && (
+            <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+              <div className="bg-white rounded-2xl border border-slate-100 shadow-2xl max-w-md w-full overflow-hidden transform transition-all">
+                <div className="p-5 border-b border-slate-150 bg-slate-50 flex items-center justify-between">
+                  <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                    <i data-lucide="download" className="text-indigo-600 w-5 h-5"></i>
+                    匯出 CSV 資料設定
                   </h3>
-                  <button onClick={() => setShowExportModal(false)} className="text-slate-400 hover:text-slate-600">
+                  <button onClick={() => setShowExportModal(false)} className="text-slate-400 hover:text-slate-600 transition">
                     <i data-lucide="x" className="w-5 h-5"></i>
                   </button>
                 </div>
                 <div className="p-6 space-y-4">
                   <div className="space-y-2">
-                    <label className="flex items-center gap-2 cursor-pointer">
+                    <label className="text-xs font-bold text-slate-700 block">匯出範圍：</label>
+                    <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
                       <input 
                         type="radio" 
-                        name="exportRange" 
+                        name="exportType" 
+                        value="all" 
                         checked={exportRangeType === "all"} 
                         onChange={() => setExportRangeType("all")} 
+                        className="text-indigo-600"
                       />
-                      <span className="text-sm font-semibold text-slate-700">匯出全部歷史預約紀錄</span>
+                      匯出目前所有篩選後的資料 ({filteredReservations.length} 筆)
                     </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
+                    <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
                       <input 
                         type="radio" 
-                        name="exportRange" 
+                        name="exportType" 
+                        value="custom" 
                         checked={exportRangeType === "custom"} 
                         onChange={() => setExportRangeType("custom")} 
+                        className="text-indigo-600"
                       />
-                      <span className="text-sm font-semibold text-slate-700">自訂日期區間匯出</span>
+                      自訂日期區間匯出
                     </label>
                   </div>
+
                   {exportRangeType === "custom" && (
-                    <div className="grid grid-cols-2 gap-2 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                    <div className="grid grid-cols-2 gap-3 pt-2">
                       <div>
-                        <label className="block text-[10px] font-bold text-slate-500 mb-1">開始日期</label>
+                        <label className="text-[11px] font-bold text-slate-600 block mb-1">起始日期</label>
                         <input 
                           type="date" 
                           value={customExportStart} 
-                          onChange={(e) => setCustomExportStart(e.target.value)} 
-                          className="w-full text-xs px-2 py-1.5 border rounded-lg"
+                          onChange={(e) => setCustomExportStart(e.target.value)}
+                          className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-xs"
                         />
                       </div>
                       <div>
-                        <label className="block text-[10px] font-bold text-slate-500 mb-1">結束日期</label>
+                        <label className="text-[11px] font-bold text-slate-600 block mb-1">結束日期</label>
                         <input 
                           type="date" 
                           value={customExportEnd} 
-                          onChange={(e) => setCustomExportEnd(e.target.value)} 
-                          className="w-full text-xs px-2 py-1.5 border rounded-lg"
+                          onChange={(e) => setCustomExportEnd(e.target.value)}
+                          className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-xs"
                         />
                       </div>
                     </div>
                   )}
                 </div>
-                <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2">
+                <div className="p-4 bg-slate-50 border-t border-slate-150 flex items-center justify-end gap-2">
                   <button
                     onClick={() => setShowExportModal(false)}
                     className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition"
@@ -2220,67 +2431,73 @@
             </div>
           )}
 
-          {/* WORD EXPORT MODAL */}
-          {showWordExportModal && isAdmin && (
-            <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-              <div className="bg-white rounded-2xl border border-slate-100 shadow-2xl max-w-sm w-full overflow-hidden transform transition-all">
+          {/* EXPORT WORD MODAL */}
+          {showWordExportModal && (
+            <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+              <div className="bg-white rounded-2xl border border-slate-100 shadow-2xl max-w-md w-full overflow-hidden transform transition-all">
                 <div className="p-5 border-b border-slate-150 bg-slate-50 flex items-center justify-between">
-                  <h3 className="text-base font-bold text-slate-800 flex items-center gap-1.5">
-                    <i data-lucide="file-text" className="text-blue-600 w-4 h-4"></i>
-                    匯出課表至 Word / Google文件
+                  <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                    <i data-lucide="file-text" className="text-blue-600 w-5 h-5"></i>
+                    匯出平板週課表 (Word/Doc)
                   </h3>
-                  <button onClick={() => setShowWordExportModal(false)} className="text-slate-400 hover:text-slate-600">
+                  <button onClick={() => setShowWordExportModal(false)} className="text-slate-400 hover:text-slate-600 transition">
                     <i data-lucide="x" className="w-5 h-5"></i>
                   </button>
                 </div>
                 <div className="p-6 space-y-4">
-                  <div className="p-3 bg-blue-50 text-blue-800 text-xs rounded-xl leading-relaxed">
-                    📝 系統將產生 Microsoft Word / Google Docs 完美支援的 **.doc 表格檔**。若匯出跨多週，系統會自動在週與週之間插入**分頁符號**，排版極致整齊。
-                  </div>
                   <div className="space-y-2">
-                    <label className="flex items-center gap-2 cursor-pointer">
+                    <label className="text-xs font-bold text-slate-700 block">選擇匯出範圍：</label>
+                    <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
                       <input 
                         type="radio" 
-                        name="wordExport" 
+                        name="wordExportType" 
+                        value="week" 
                         checked={wordExportType === "week"} 
                         onChange={() => setWordExportType("week")} 
+                        className="text-blue-600"
                       />
-                      <span className="text-sm font-semibold text-slate-700">僅匯出當前畫面「本週課表」</span>
+                      僅匯出當前檢視的這一週 ({formatDate(selectedWeekStart)} 週)
                     </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
+                    <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
                       <input 
                         type="radio" 
-                        name="wordExport" 
-                        checked={wordExportType === "range"} 
-                        onChange={() => setWordExportType("range")} 
+                        name="wordExportType" 
+                        value="custom" 
+                        checked={wordExportType === "custom"} 
+                        onChange={() => setWordExportType("custom")} 
+                        className="text-blue-600"
                       />
-                      <span className="text-sm font-semibold text-slate-700">自訂日期範圍 (批次產製週表格)</span>
+                      自訂日期區間 (自動以每週分頁匯出)
                     </label>
                   </div>
-                  {wordExportType === "range" && (
-                    <div className="grid grid-cols-2 gap-2 p-3 bg-slate-50 rounded-xl border border-slate-200">
+
+                  {wordExportType === "custom" && (
+                    <div className="grid grid-cols-2 gap-3 pt-2">
                       <div>
-                        <label className="block text-[10px] font-bold text-slate-500 mb-1">開始日期</label>
+                        <label className="text-[11px] font-bold text-slate-600 block mb-1">起始日期</label>
                         <input 
                           type="date" 
                           value={wordCustomStart} 
-                          onChange={(e) => setWordCustomStart(e.target.value)} 
-                          className="w-full text-xs px-2 py-1.5 border rounded-lg"
+                          onChange={(e) => setWordCustomStart(e.target.value)}
+                          className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-xs"
                         />
                       </div>
                       <div>
-                        <label className="block text-[10px] font-bold text-slate-500 mb-1">結束日期</label>
+                        <label className="text-[11px] font-bold text-slate-600 block mb-1">結束日期</label>
                         <input 
                           type="date" 
                           value={wordCustomEnd} 
-                          onChange={(e) => setWordCustomEnd(e.target.value)} 
-                          className="w-full text-xs px-2 py-1.5 border rounded-lg"
+                          onChange={(e) => setWordCustomEnd(e.target.value)}
+                          className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-xs"
                         />
                       </div>
                     </div>
                   )}
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    💡 匯出檔格式為 .doc，可以在 Microsoft Word 或 Google 文件 (Google Docs) 中完美展示排版、圖例與格狀課表。
+                  </p>
                 </div>
-                <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2">
+                <div className="p-4 bg-slate-50 border-t border-slate-150 flex items-center justify-end gap-2">
                   <button
                     onClick={() => setShowWordExportModal(false)}
                     className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition"
@@ -2289,7 +2506,7 @@
                   </button>
                   <button
                     onClick={executeWordExport}
-                    className="px-5 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white shadow-md transition"
+                    className="px-5 py-2 rounded-xl text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-md transition"
                   >
                     確認產製 Doc 檔
                   </button>
@@ -2298,221 +2515,8 @@
             </div>
           )}
 
-          {/* TABLET ASSIGNMENT MODAL */}
-          {tabletAssignModal && isAdmin && (
-            <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-              <div className="bg-white rounded-2xl border border-slate-100 shadow-2xl max-w-lg w-full overflow-hidden transform transition-all">
-                <div className="p-6 border-b border-slate-150 bg-slate-50/80 flex items-center justify-between">
-                  <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                    <i data-lucide="tablet" className="text-indigo-600 w-5 h-5"></i>
-                    指派/設定平板編號 (可多選)
-                  </h3>
-                  <button 
-                    onClick={() => setTabletAssignModal(null)} 
-                    className="text-slate-400 hover:text-slate-600 transition"
-                  >
-                    <i data-lucide="x" className="w-5 h-5"></i>
-                  </button>
-                </div>
-                <div className="p-6 space-y-5">
-                  <div className="p-3.5 bg-slate-50 rounded-xl space-y-1 text-xs text-slate-600 border border-slate-100">
-                    <p>🧑‍🏫 借用教師：<strong className="text-slate-800">{tabletAssignModal.teacher} 老師</strong></p>
-                    <p>📅 借用日期：<strong className="text-slate-800">{tabletAssignModal.date}</strong></p>
-                    <p>🏫 預約班級：<strong className="text-slate-800">{tabletAssignModal.grade}</strong></p>
-                    <p>⏰ 借用節次：<strong className="text-slate-800">{tabletAssignModal.sessions.join(", ")}</strong></p>
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="block text-sm font-bold text-slate-700">分配平板組別代碼或編號（點擊下方按鈕可多選）</label>
-                    <input 
-                      type="text"
-                      value={tempTabletCode}
-                      onChange={(e) => setTempTabletCode(e.target.value)}
-                      placeholder="例如: (S)-A(1-30), (I)-B(1-30)"
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-mono font-bold"
-                    />
-                  </div>
-                  
-                  <div className="space-y-4">
-                    <p className="text-xs font-bold text-indigo-950 uppercase tracking-wider flex items-center justify-between">
-                      <span className="flex items-center gap-1">
-                        <span className="w-1.5 h-3 rounded-full bg-indigo-600"></span>
-                        管理者智慧快選代碼群（灰色代表同時間已借出）：
-                      </span>
-                      {tempTabletCode && (
-                        <button 
-                          type="button" 
-                          onClick={() => setTempTabletCode("")}
-                          className="text-[10px] text-red-500 hover:underline font-normal"
-                        >
-                          清除選擇
-                        </button>
-                      )}
-                    </p>
-
-                    <div className="space-y-1.5 p-3.5 bg-slate-50/50 rounded-xl border border-slate-200/60">
-                      <p className="text-xs font-bold text-slate-500 flex items-center gap-1">
-                        📱 三星平板系列 <span className="font-mono text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.2 rounded font-semibold">(S) A~P (1-30)</span>
-                      </p>
-                      <div className="grid grid-cols-4 sm:grid-cols-4 gap-1.5 pt-1.5">
-                        {SAMSUNG_CODES.map((code, idx) => {
-                          const isOccupied = occupiedTabletCodes.has(code);
-                          const selectedCodes = tempTabletCode.split(',').map(c => c.trim());
-                          const isSelected = selectedCodes.includes(code);
-
-                          return (
-                            <button
-                              key={idx}
-                              type="button"
-                              disabled={isOccupied}
-                              onClick={() => toggleTabletCodeSelect(code)}
-                              className={`text-[11px] py-1 px-1 text-center rounded border font-mono font-bold transition ${
-                                isOccupied
-                                  ? "bg-slate-200 border-slate-300 text-slate-400 cursor-not-allowed line-through"
-                                  : isSelected 
-                                    ? "bg-indigo-600 border-indigo-600 text-white shadow-sm"
-                                    : "bg-white border-slate-200 hover:bg-slate-100 text-slate-700"
-                              }`}
-                              title={isOccupied ? "同一時段已被其他預約指派" : code}
-                            >
-                              {code.replace("(S)-", "")} {isOccupied ? "[借出]" : ""}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="p-3 bg-slate-50/50 rounded-xl border border-slate-200/60 space-y-2">
-                        <p className="text-xs font-bold text-slate-500">
-                          🍎 iPad 系列 <span className="font-mono text-[10px] bg-rose-100 text-rose-800 px-1.5 py-0.2 rounded font-semibold">(I) B~H (1-30)</span>
-                        </p>
-                        <div className="grid grid-cols-4 gap-1.5 pt-1.5">
-                          {IPAD_CODES.map((code, idx) => {
-                            const isOccupied = occupiedTabletCodes.has(code);
-                            const selectedCodes = tempTabletCode.split(',').map(c => c.trim());
-                            const isSelected = selectedCodes.includes(code);
-
-                            return (
-                              <button
-                                key={idx}
-                                type="button"
-                                disabled={isOccupied}
-                                onClick={() => toggleTabletCodeSelect(code)}
-                                className={`text-[10px] py-1 px-1 text-center rounded border font-mono font-bold transition ${
-                                  isOccupied
-                                    ? "bg-slate-200 border-slate-300 text-slate-400 cursor-not-allowed line-through"
-                                    : isSelected 
-                                      ? "bg-rose-600 border-rose-600 text-white shadow-sm"
-                                      : "bg-white border-slate-200 hover:bg-slate-100 text-slate-700"
-                                }`}
-                                title={isOccupied ? "同一時段已被其他預約指派" : code}
-                              >
-                                {code.replace("(I)-", "I ")} {isOccupied ? "[借出]" : ""}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      <div className="p-3 bg-slate-50/50 rounded-xl border border-slate-200/60 space-y-2">
-                        <p className="text-xs font-bold text-slate-500">
-                          💻 Chromebook 系列 <span className="font-mono text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded font-semibold">(CB) A~B (1-30)</span>
-                        </p>
-                        <div className="flex gap-1.5">
-                          {CHROMEBOOK_CODES.map((code, idx) => {
-                            const isOccupied = occupiedTabletCodes.has(code);
-                            const selectedCodes = tempTabletCode.split(',').map(c => c.trim());
-                            const isSelected = selectedCodes.includes(code);
-
-                            return (
-                              <button
-                                key={idx}
-                                type="button"
-                                disabled={isOccupied}
-                                onClick={() => toggleTabletCodeSelect(code)}
-                                className={`text-[11px] py-1.5 px-3 rounded border font-mono font-bold w-full transition ${
-                                  isOccupied
-                                    ? "bg-slate-200 border-slate-300 text-slate-400 cursor-not-allowed line-through"
-                                    : isSelected 
-                                      ? "bg-emerald-600 border-emerald-600 text-white shadow-sm"
-                                      : "bg-white border-slate-200 hover:bg-slate-100 text-slate-700"
-                                }`}
-                                title={isOccupied ? "同一時段已被其他預約指派" : code}
-                              >
-                                {code.replace("(CB)-", "CB ")} {isOccupied ? "[借出]" : ""}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2">
-                  <button
-                    onClick={() => setTabletAssignModal(null)}
-                    className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition"
-                  >
-                    取消
-                  </button>
-                  <button
-                    onClick={saveTabletAssign}
-                    className="px-5 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white shadow-md transition"
-                  >
-                    儲存設定
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* DELETION CONFIRMATION MODAL */}
-          {deleteConfirmModal && isPrimaryAdmin && (
-            <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-              <div className="bg-white rounded-2xl border border-slate-100 shadow-2xl max-w-sm w-full overflow-hidden transform transition-all p-6 space-y-4">
-                <div className="flex items-center gap-3 text-red-600">
-                  <div className="p-2 bg-red-50 rounded-lg">
-                    <i data-lucide="trash-2" className="w-6 h-6"></i>
-                  </div>
-                  <div>
-                    <h3 className="text-base font-bold text-slate-900">確認取消此平板借用預約？</h3>
-                    <p className="text-xs text-slate-500">此動作將同步移除 Google 試算表上的紀錄。</p>
-                  </div>
-                </div>
-                <div className="p-3 bg-slate-50 rounded-xl space-y-1 text-xs text-slate-600 font-medium">
-                  <p>🧑‍🏫 預約老師：<strong>{deleteConfirmModal.teacher} 老師</strong></p>
-                  <p>📅 預約日期：<strong>{deleteConfirmModal.date}</strong></p>
-                  <p>🏫 預約班級：<strong>{deleteConfirmModal.grade}</strong></p>
-                  <p>⏰ 預約節次：<strong>{deleteConfirmModal.sessions.join(", ")}</strong></p>
-                </div>
-                <div className="flex items-center justify-end gap-2 pt-2">
-                  <button
-                    onClick={() => setDeleteConfirmModal(null)}
-                    className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition"
-                  >
-                    暫不取消
-                  </button>
-                  <button
-                    onClick={confirmDelete}
-                    className="px-5 py-2 rounded-xl text-xs font-semibold bg-red-600 hover:bg-red-700 text-white shadow-md transition"
-                  >
-                    確認取消預約
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <footer className="bg-slate-900 text-slate-400 border-t border-slate-800 py-8 px-4 mt-12 text-center text-xs space-y-2">
-            <p className="font-bold text-slate-300">
-              新北市立重慶國民中學 平板臨時設備借用系統
-            </p>
-            <p>
-              本網頁提供校內資訊教師、各領域授課教師預約登記使用。所有資料皆即時更新存檔。
-            </p>
-            <p className="text-[10px] text-slate-500">
-              系統時間依據今日基準校時運作。
-            </p>
+          <footer className="bg-slate-100 border-t border-slate-200 py-6 text-center text-xs text-slate-500 mt-auto">
+            <p>重慶國中 平板臨時借用預約管理系統 &copy; 2026</p>
           </footer>
         </div>
       );

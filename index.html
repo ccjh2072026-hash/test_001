@@ -91,7 +91,7 @@
     const escapeCsv = (str) => `"${String(str || '').replace(/"/g, '""')}"`;
 
     function App() {
-      const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzW_pWfZ98esw52a1c3I0a91qaK8oyxdA_dOO8B8S5ZD46BUVeEfYLwTlpOGayVjPcl_A/exec";
+      const GAS_API_URL = "https://script.google.com/macros/s/AKfycbyh8DxjuO5Ut4pxPf-PS2O8LTsZgZSTWHQQFa-GTkgRQDCrc4M1N2wKXBKscnALPdjZ2A/exec";
       const ADMIN_AUTH_URL = "https://script.google.com/macros/s/AKfycbw-b5R_dfCj7aZgDTqT4C7o1crFFPIvRP3SdpLG9A_vqhGpMh2t5NRsqDD5FYmQ1o53/exec";
 
       const [reservations, setReservations] = useState(() => {
@@ -137,7 +137,8 @@
         dates: [formatDate(new Date())],
         grade: "",
         sessions: [],
-        tabletCode: ""
+        tabletCode: "",
+        note: "" // ===== 新增：備註欄位狀態 =====
       });
       const [notification, setNotification] = useState(null);
       const [tabletAssignModal, setTabletAssignModal] = useState(null); 
@@ -248,7 +249,8 @@
               sessions: Array.isArray(item.sessions) 
                 ? item.sessions 
                 : (typeof item.sessions === 'string' ? item.sessions.split(',').map(s => s.trim()) : []),
-              tabletCode: item.tabletCode || item['指派平板編號'] || ''
+              tabletCode: item.tabletCode || item['指派平板編號'] || '',
+              note: item.note || item['備註'] || '' // ===== 新增：讀取 Apps Script 傳回的第 I 欄 (備註) =====
             })).reverse();
             
             setReservations(formatted);
@@ -443,7 +445,8 @@
           date: d,
           grade: formData.grade,
           sessions: sortedSessions,
-          tabletCode: formData.tabletCode
+          tabletCode: formData.tabletCode,
+          note: formData.note || "" // ===== 新增：打包傳送備註給後端 =====
         }));
 
         showNotification(`正在傳送 ${newReservations.length} 筆預約資料，請稍候...`, "info");
@@ -471,7 +474,8 @@
             dates: [formatDate(new Date())],
             grade: "",
             sessions: [],
-            tabletCode: ""
+            tabletCode: "",
+            note: "" // ===== 新增：送出後重置備註欄位 =====
           });
 
           if (isAdmin) {
@@ -1354,6 +1358,27 @@
                       })}
                     </div>
                   </div>
+
+
+                    {/* ===== 新增：備註欄位 (需求 1) ===== */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-sm font-bold text-slate-700">
+                        備註
+                      </label>
+                      <span className="text-xs text-slate-400">
+                        {formData.note ? formData.note.length : 0} / 50 字
+                      </span>
+                    </div>
+                    <textarea
+                      maxLength="50"
+                      rows="2"
+                      placeholder="如有特殊需求或說明請在此填寫 (限 50 字內)"
+                      value={formData.note || ""}
+                      onChange={(e) => setFormData(prev => ({ ...prev, note: e.target.value }))}
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 text-sm resize-none"
+                    />
+                  </div>
                   
                   {duplicateWarning && (
                     <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
@@ -1739,7 +1764,7 @@
                                     <div 
                                       key={res.id}
                                       className={`p-2 rounded-xl border text-[11px] leading-tight font-medium shadow-sm transition flex flex-col justify-between h-full ${cardColor}`}
-                                      title={`借用人：${res.teacher} 老師\n信箱：${res.email}\n用途：${res.purpose}\n班級：${res.grade}${isUnassigned ? '\n(未指派平板)' : ''}`}
+                                      title={`用途：${res.purpose}\n備註：${res.note || "無"}`}
                                     >
                                       <div className="space-y-1">
                                         <div className="font-extrabold border-b border-current/10 pb-0.5 mb-0.5 truncate flex items-center gap-1 text-[11.5px]">

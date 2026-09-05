@@ -68,7 +68,7 @@
     ];
     const PURPOSES = ["領域教學", "研習", "校定課程", "社團", "行政業務", "其他"];
     const WEEKDAYS_ZH = ["一", "二", "三", "四", "五", "六"];
-    const SAMSUNG_CODES = Array.from({ length: 16 }).map((_, i) => `(S)-${String.fromCharCode(65 + i)}(1-30)`);
+    const Surface_Go_CODES = Array.from({ length: 16 }).map((_, i) => `(S)-${String.fromCharCode(65 + i)}(1-30)`);
     const IPAD_CODES = Array.from({ length: 7 }).map((_, i) => `(I)-${String.fromCharCode(66 + i)}(1-30)`);
     const CHROMEBOOK_CODES = ["(CB)-A(1-30)", "(CB)-B(1-30)"];
 
@@ -918,7 +918,7 @@
         });
 
         const allKnownCodes = [
-          ...SAMSUNG_CODES,
+          ...Surface_Go_CODES,
           ...IPAD_CODES,
           ...CHROMEBOOK_CODES,
           ...Object.keys(counts)
@@ -927,7 +927,7 @@
 
         let list = uniqueCodes.map(code => {
           let category = "Other";
-          if (code.includes("(S)-")) category = "Samsung";
+          if (code.includes("(S)-")) category = "Surface Go";
           else if (code.includes("(I)-")) category = "iPad";
           else if (code.includes("(CB)-")) category = "Chromebook";
 
@@ -978,7 +978,7 @@
         csvContent += "平板代碼/編號,設備類別,累計借用次數/節數\r\n";
 
         tabletUsageStats.list.forEach(item => {
-          const categoryName = item.category === 'Samsung' ? '三星系列' : item.category === 'iPad' ? 'iPad系列' : item.category === 'Chromebook' ? 'Chromebook系列' : '其他系列';
+          const categoryName = item.category === 'Surface Go' ? '三星系列' : item.category === 'iPad' ? 'iPad系列' : item.category === 'Chromebook' ? 'Chromebook系列' : '其他系列';
           csvContent += `${escapeCsv(item.code)},${escapeCsv(categoryName)},${item.count}\r\n`;
         });
 
@@ -1313,17 +1313,17 @@
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between">
                       <label className="block text-sm font-bold text-slate-700">
-                        使用節次 (最多可勾選 4 個節次) <span className="text-red-500">*</span>
+                        使用節次 (請按照課表勾選，最多可勾選 2 個節次) <span className="text-red-500">*</span>
                       </label>
-                      <span className={`text-xs font-semibold ${formData.sessions.length >= 4 ? 'text-amber-600 font-bold' : 'text-slate-400'}`}>
-                        已選擇 {formData.sessions.length} / 4 節
+                      <span className={`text-xs font-semibold ${formData.sessions.length >= 2 ? 'text-amber-600 font-bold' : 'text-slate-400'}`}>
+                        已選擇 {formData.sessions.length} / 2 節
                       </span>
                     </div>
                     
                     <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
                       {SESSIONS.map((session, idx) => {
                         const isSelected = formData.sessions.includes(session.name);
-                        const isMaxReached = formData.sessions.length >= 4 && !isSelected;
+                        const isMaxReached = formData.sessions.length >= 2 && !isSelected;
                         const isDisabled = !session.reservable || isMaxReached;
 
                         return (
@@ -1351,7 +1351,7 @@
                               {session.name}
                             </span>
                             <span className="text-[10px] text-slate-400 mt-0.5">
-                              {!session.reservable ? "不開放預約" : isMaxReached ? "已達4節上限" : session.time}
+                              {!session.reservable ? "不開放預約" : isMaxReached ? "已達2節上限" : session.time}
                             </span>
                           </label>
                         );
@@ -2043,7 +2043,7 @@
                 <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-bold text-slate-600">品牌類別過濾：</span>
-                    {["ALL", "Samsung", "iPad", "Chromebook", "Other"].map(cat => (
+                    {["ALL", "Surface Go", "iPad", "Chromebook", "Other"].map(cat => (
                       <button
                         key={cat}
                         onClick={() => setStatsCategoryFilter(cat)}
@@ -2103,7 +2103,7 @@
                               </td>
                               <td className="p-3 font-sans">
                                 <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                                  item.category === 'Samsung' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                                  item.category === 'Surface Go' ? 'bg-blue-50 text-blue-700 border-blue-200' :
                                   item.category === 'iPad' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
                                   item.category === 'Chromebook' ? 'bg-amber-50 text-amber-700 border-amber-200' :
                                   'bg-slate-50 text-slate-600 border-slate-200'
@@ -2252,11 +2252,11 @@
                   <div className="space-y-3 pt-2">
                     <p className="text-xs font-bold text-slate-600">快速點選加入 / 移除常用設備代碼：</p>
                     
-                    {/* Samsung */}
+                    {/* Surface Go */}
                     <div className="space-y-1">
-                      <p className="text-[11px] font-bold text-blue-600">Samsung 系列 (全 16 組):</p>
+                      <p className="text-[11px] font-bold text-blue-600">Surface Go 系列 (全 16 組):</p>
                       <div className="flex flex-wrap gap-1.5">
-                        {SAMSUNG_CODES.map((code) => {
+                        {Surface_Go_CODES.map((code) => {
                           const isSelected = tempTabletCode.includes(code);
                           const isOccupied = occupiedTabletCodes.has(code);
                           return (

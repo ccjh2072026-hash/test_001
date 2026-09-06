@@ -414,74 +414,86 @@
         e.preventDefault();
         if (isSubmitting) return;
         
-        if (!formData.email.trim()) return showNotification("請填寫電子郵件", "error");
-        if (!formData.teacher.trim()) return showNotification("請填寫借用教師姓名", "error");
-        if (!formData.grade.trim()) return showNotification("請填寫使用年級與班級", "error");
-        if (formData.sessions.length === 0) return showNotification("請至少選擇一個使用節次", "error");
-        if (formData.dates.length === 0) return showNotification("請至少選擇一個借用日期", "error");
+        // 1. 表單基本驗證
+  if (!formData.email.trim()) return showNotification("請填寫電子郵件", "error");
+  if (!formData.teacher.trim()) return showNotification("請填寫借用教師姓名", "error");
+  if (!formData.grade.trim()) return showNotification("請填寫使用年級與班級", "error");
+  if (formData.sessions.length === 0) return showNotification("請至少選擇一個使用節次", "error");
+  if (formData.dates.length === 0) return showNotification("請至少選擇一個借用日期", "error");
 
-        for (const d of formData.dates) {
-          if (!d) return showNotification("借用日期不得為空", "error");
-          if (new Date(d) < new Date(semesterStart) || new Date(d) > new Date(semesterEnd)) {
-            return showNotification(`日期 ${d} 超出該學期可借用區間！目前範圍：${semesterStart} 至 ${semesterEnd}`, "error");
-          }
-        }
+  // 日期區間驗證
+  for (const d of formData.dates) {
+    if (!d) return showNotification("借用日期不得為空", "error");
+    if (new Date(d) < new Date(semesterStart) || new Date(d) > new Date(semesterEnd)) {
+      return showNotification(`日期 ${d} 超出該學期可借用區間！目前範圍：${semesterStart} 至 ${semesterEnd}`, "error");
+    }
+  }
 
-        if (formData.sessions.includes("早自習")) {
-          return showNotification("「早自習」時段不開放預約借用！", "error");
-        }
+  // 特定節次限制驗證
+  if (formData.sessions.includes("早自習")) {
+    return showNotification("「早自習」時段不開放預約借用！", "error");
+  }
 
-        setIsSubmitting(true);
+  setIsSubmitting(true);
 
-        const sortedSessions = [...formData.sessions].sort(
-          (a, b) => (sessionOrderMap[a] ?? 99) - (sessionOrderMap[b] ?? 99)
-        );
+  // 對選擇的節次進行排序（確保資料規範一致）
+  const sortedSessions = [...formData.sessions].sort(
+    (a, b) => (sessionOrderMap[a] ?? 99) - (sessionOrderMap[b] ?? 99)
+  );
 
-        const newReservations = formData.dates.map((d, index) => ({
-          id: 'res_' + Date.now() + '_' + index,
-          email: formData.email,
-          teacher: formData.teacher,
-          purpose: formData.purpose,
-          date: d,
-          grade: formData.grade,
-          sessions: sortedSessions,
-          tabletCode: formData.tabletCode,
-          note: formData.note || "" // ===== 新增：打包傳送備註給後端 =====
-        }));
+  // 2. 將「多日期 x 多節次」拆分為單一日期與單一節次的獨立預約紀錄陣列
+  const newReservations = [];
+  let recordCounter = 0;
 
-        showNotification(`正在傳送 ${newReservations.length} 筆預約資料，請稍候...`, "info");
-        try {
-          await Promise.all(
-            newReservations.map(resObj =>
-              fetch(GAS_API_URL, {
-                method: "POST",
-                mode: "no-cors",
-                headers: {
-                  "Content-Type": "text/plain;charset=utf-8"
-                },
-                body: JSON.stringify(resObj)
-              })
-            )
-          );
+  formData.dates.forEach((d) => {
+    sortedSessions.forEach((s) => {
+      newReservations.push({
+        id: 'res_' + Date.now() + '_' + (recordCounter++),
+        email: formData.email,
+        teacher: formData.teacher,
+        purpose: formData.purpose,
+        date: d,
+        grade: formData.grade,
+        sessions: [s], // 關鍵重點：拆分為單一節次陣列（一節次一筆紀錄）
+        tabletCode: formData.tabletCode,
+        note: formData.note || ""
+      });
+    });
+  });
 
-          setReservations(prev => [...newReservations, ...prev]);
-          showNotification(`預約借用成功！已同步產生 ${newReservations.length} 筆獨立預約紀錄並登錄至 Google 試算表。`);
+  showNotification(`正在傳送 ${newReservations.length} 筆預約資料，請稍候...`, "info");
+
+  try {
+    // 3. 並行發送所有拆分後的單筆預約請求給 GAS
+    await Promise.all(
+      newReservations.map(resObj =>
+        fetch(GAS_API_URL, {
+          method: "POST",
+          mode: "no-cors",
+          headers: {
+            "Content-Type": "text/plain;charset=utf-8"
+          },
+          body: JSON.stringify(resObj)
+        })
+      )
+    );
+
+    // 更新前端狀態並提示成功
+    setReservations(prev => [...newReservations, ...prev]);
+    showNotification(`預約借用成功！已同步拆分並產生 ${newReservations.length} 筆獨立預約紀錄登錄至 Google 試算表。`);
           
-          setFormData({
-            email: "",
-            teacher: "",
-            purpose: "領域教學",
-            dates: [formatDate(new Date())],
+          // 保留 Email、借用教師姓名、用途、借用日期，清空 年級班級、使用節次、備註
+          setFormData(prev => ({
+            ...prev,
             grade: "",
             sessions: [],
             tabletCode: "",
             note: "" // ===== 新增：送出後重置備註欄位 =====
-          });
+          }));
 
+          // 非管理員身份時不跳轉頁面，停留在填寫預約表單分頁
           if (isAdmin) {
             setActiveTab("list");
-          } else {
-            setActiveTab("timetable");
           }
         } catch (error) {
           console.error("回存 GAS 失敗:", error);
@@ -1282,7 +1294,7 @@
                         <button
                           type="button"
                           onClick={handleAddDate}
-                          className="p-2.5 bg-white hover:bg-white text-white hover:text-[#CCCCCC] transition-colors duration-300 flex items-center justify-center font-bold focus:outline-none rounded-lg"
+                          className="hidden p-2.5 bg-white hover:bg-white text-white hover:text-[#CCCCCC] transition-colors duration-300 flex items-center justify-center font-bold focus:outline-none rounded-lg"
                         >
                           <i data-lucide="plus" className="w-5 h-5"></i>
                         </button>
@@ -1379,7 +1391,8 @@
                       className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 text-sm resize-none"
                     />
                   </div>
-                  
+
+                  {/* duplicateWarning 提示區塊已隱藏                  
                   {duplicateWarning && (
                     <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
                       <p className="text-sm font-bold text-amber-800 flex items-center gap-1.5">
@@ -1396,6 +1409,8 @@
                       </p>
                     </div>
                   )}
+                  */}
+
                   <div className="pt-4 flex items-center justify-end gap-3 border-t border-slate-100">
                     <button
                       type="button"

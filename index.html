@@ -701,7 +701,7 @@
           return;
         }
         let csvContent = "data:text/csv;charset=utf-8,\uFEFF"; 
-        csvContent += "用途,借用日期,使用節次,使用年級班級,指派平板編號,借用人郵件,借用人姓名\r\n";
+        csvContent += "用途,借用日期,使用節次,使用年級班級,指派平板編號,借用人郵件,借用人姓名,備註\r\n";
         
         exportData.forEach(r => {
           const row = [
@@ -711,7 +711,8 @@
             escapeCsv(r.grade),
             escapeCsv(r.tabletCode || ''),
             escapeCsv(r.email),
-            escapeCsv(r.teacher)
+            escapeCsv(r.teacher),
+            escapeCsv(r.note)
           ].join(",");
           csvContent += row + "\r\n";
         });

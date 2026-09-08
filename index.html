@@ -410,6 +410,30 @@
         showNotification(`已預填借用日期：${dateStr} 與 使用節次：${sessionName}！`, "info");
       };
 
+      // ===== 新增的點擊早自習處理函式 =====
+      const handleMorningBook = (dateStr) => {
+        if (!isAdmin) {
+          showNotification("早自習時段僅限管理員登錄後進行預約！", "error");
+          return;
+        }
+        if (new Date(dateStr) < new Date(semesterStart) || new Date(dateStr) > new Date(semesterEnd)) {
+          showNotification(`該日期不在目前設定的學期預約範圍內 (${semesterStart} ~ ${semesterEnd})！`, "error");
+          return;
+        }
+        setFormData({
+          email: "admin@ccjh.ntpc.edu.tw",
+          teacher: "admin",
+          purpose: "領域教學",
+          dates: [dateStr],
+          grade: "",
+          sessions: ["早自習"],
+          tabletCode: "",
+          note: ""
+        });
+        setActiveTab("book");
+        showNotification(`已帶入管理員早自習預約預設值（日期：${dateStr}）！`, "info");
+      };
+
       const handleSubmit = async (e) => {
         e.preventDefault();
         if (isSubmitting) return;
@@ -429,9 +453,9 @@
     }
   }
 
-  // 特定節次限制驗證
-  if (formData.sessions.includes("早自習")) {
-    return showNotification("「早自習」時段不開放預約借用！", "error");
+  // 特定節次限制驗證：非管理員身份時不開放早自習
+  if (formData.sessions.includes("早自習") && !isAdmin) {
+   return showNotification("「早自習」時段不開放一般教師預約借用！", "error");
   }
 
   setIsSubmitting(true);
@@ -1842,11 +1866,26 @@
                                 <span className="text-[10px] font-medium opacity-100 group-hover:opacity-0 transition duration-150 absolute">可借用</span>
                               </button>
                             ) : (
-                              <div className="w-full h-full min-h-[60px] rounded-lg flex flex-col items-center justify-center text-slate-400 select-none">
-                                <i data-lucide="lock" className="w-3.5 h-3.5 opacity-40"></i>
-                                <span className="text-[9px] mt-0.5 font-bold tracking-tight text-slate-400">不開放</span>
-                              </div>
+
+                              /* 新增：當為早自習且已登入管理員時，開放點擊新增預約 */
+                              isAdmin && session.name === "早自習" ? (
+                                <button
+                                  onClick={() => handleMorningBook(day.dateStr)}
+                                  className="w-full h-full min-h-[60px] rounded-lg border border-dashed border-purple-300 bg-purple-50/30 hover:bg-purple-100/60 hover:border-purple-500 hover:text-purple-700 transition flex flex-col items-center justify-center text-purple-600 group p-1"
+                                  title="管理員權限：新增早自習預約紀錄"
+                                >
+                                  <i data-lucide="plus-circle" className="w-4 h-4 mb-0.5"></i>
+                                  <span className="text-[10px] font-bold">新增紀錄</span>
+                                </button>
+                              ) : (
+                                <div className="w-full h-full min-h-[60px] rounded-lg flex flex-col items-center justify-center text-slate-400 select-none">
+                                  <i data-lucide="lock" className="w-3.5 h-3.5 opacity-40"></i>
+                                  <span className="text-[9px] mt-0.5 font-bold tracking-tight text-slate-400">不開放</span>
+                                </div>
+                              )
                             )}
+
+
                           </div>
                         );
                       })

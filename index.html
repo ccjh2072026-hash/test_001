@@ -411,27 +411,27 @@
       };
 
       // ===== 新增的點擊早自習處理函式 =====
+      // ===== 升級/修訂：點擊早自習處理函式 (預設填寫登入者/預設值) =====
       const handleMorningBook = (dateStr) => {
         if (!isAdmin) {
           showNotification("早自習時段僅限管理員登錄後進行預約！", "error");
           return;
         }
         if (new Date(dateStr) < new Date(semesterStart) || new Date(dateStr) > new Date(semesterEnd)) {
-          showNotification(`該日期不在目前設定的學期預約範圍內 (${semesterStart} ~ ${semesterEnd})！`, "error");
+    showNotification(`該日期不在目前設定的學期預約範圍內 (${semesterStart} ~ ${semesterEnd})！`, "error");
           return;
         }
-        setFormData({
-          email: "admin@ccjh.ntpc.edu.tw",
-          teacher: "admin",
-          purpose: "領域教學",
+        setFormData(prev => ({
+          ...prev,
+          email: "Morning_study@ccjh.ntpc.edu.tw",
+          teacher: "早自習",
+          // 若原先沒有填寫用途，可在此帶入預設值；若已有填寫則保留
+          purpose: prev.purpose || "領域教學",
           dates: [dateStr],
-          grade: "",
           sessions: ["早自習"],
-          tabletCode: "",
-          note: ""
-        });
+        }));
         setActiveTab("book");
-        showNotification(`已帶入管理員早自習預約預設值（日期：${dateStr}）！`, "info");
+        showNotification(`已帶入早自習預約（日期：${dateStr}），請檢查資訊後送出！`, "info");
       };
 
       const handleSubmit = async (e) => {
@@ -1855,6 +1855,19 @@
                                     </div>
                                   );
                                 })}
+
+                                {/* ===== 需求修改重點：當該時段為早自習且已登入管理員時，即使已有預約紀錄，底部依然顯示【+ 新增預約】按鈕 ===== */}
+                                {isAdmin && session.name === "早自習" && (
+                                  <button
+                                    onClick={() => handleMorningBook(day.dateStr)}
+                                    className="w-full mt-1.5 py-1 px-2 rounded-lg border border-dashed border-purple-300 bg-purple-50/50 hover:bg-purple-100 hover:border-purple-400 text-purple-700 transition flex items-center justify-center gap-1 text-[10px] font-bold"
+                                    title="管理員權限：持續新增早自習預約紀錄"
+                                  >
+                                    <i data-lucide="plus-circle" className="w-3 h-3"></i>
+                                    <span>新增預約</span>
+                                  </button>
+                                )}
+                                  
                               </div>
                             ) : session.reservable ? (
                               <button
@@ -1868,6 +1881,7 @@
                             ) : (
 
                               /* 新增：當為早自習且已登入管理員時，開放點擊新增預約 */
+                              /* 當完全無紀錄且為早自習時的預設【新增紀錄】按鈕 */
                               isAdmin && session.name === "早自習" ? (
                                 <button
                                   onClick={() => handleMorningBook(day.dateStr)}

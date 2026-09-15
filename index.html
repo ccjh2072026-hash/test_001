@@ -151,6 +151,15 @@
       const [showWordExportModal, setShowWordExportModal] = useState(false);
       const [wordExportType, setWordExportType] = useState("week");
       const [wordCustomStart, setWordCustomStart] = useState("2026-07-20");
+
+      // ===== 新增：早自習彈窗控制 State =====
+      const [showMorningModal, setShowMorningModal] = useState(false);
+      const [morningModalData, setMorningModalData] = useState({
+        date: "",
+        grade: "",
+        note: ""
+      });
+
       const [wordCustomEnd, setWordCustomEnd] = useState("2026-07-25");
 
       // 統計分頁 State
@@ -410,28 +419,67 @@
         showNotification(`已預填借用日期：${dateStr} 與 使用節次：${sessionName}！`, "info");
       };
 
-      // ===== 新增的點擊早自習處理函式 =====
-      // ===== 升級/修訂：點擊早自習處理函式 (預設填寫登入者/預設值) =====
+      // ===== 修改：點擊早自習「新增紀錄」改為開啟彈窗而非跳轉頁面 =====
       const handleMorningBook = (dateStr) => {
         if (!isAdmin) {
           showNotification("早自習時段僅限管理員登錄後進行預約！", "error");
           return;
         }
         if (new Date(dateStr) < new Date(semesterStart) || new Date(dateStr) > new Date(semesterEnd)) {
-    showNotification(`該日期不在目前設定的學期預約範圍內 (${semesterStart} ~ ${semesterEnd})！`, "error");
+          showNotification(`該日期不在目前設定的學期預約範圍內 (${semesterStart} ~ ${semesterEnd})！`, "error");
           return;
         }
-        setFormData(prev => ({
-          ...prev,
+        setMorningModalData({
+          date: dateStr,
+          grade: "",
+          note: ""
+        });
+        setShowMorningModal(true);
+      };
+
+      // ===== 新增：早自習彈窗提交處理 (執行與 Confirm Submit 相同之邏輯) =====
+      const handleMorningSubmit = async (e) => {
+        e.preventDefault();
+        if (isSubmitting) return;
+
+        // 使用年級班級可為空且不限制格式
+        const gradeVal = morningModalData.grade.trim();
+
+        setIsSubmitting(true);
+
+        const newResObj = {
+          id: 'res_' + Date.now() + '_morning',
           email: "Morning_study@ccjh.ntpc.edu.tw",
           teacher: "早自習",
-          // 若原先沒有填寫用途，可在此帶入預設值；若已有填寫則保留
-          purpose: prev.purpose || "領域教學",
-          dates: [dateStr],
+          purpose: "其他",
+          date: morningModalData.date,
+          grade: gradeVal,
           sessions: ["早自習"],
-        }));
-        setActiveTab("book");
-        showNotification(`已帶入早自習預約（日期：${dateStr}），請檢查資訊後送出！`, "info");
+          tabletCode: "",
+          note: morningModalData.note || ""
+        };
+
+        showNotification("正在傳送早自習預約資料，請稍候...", "info");
+
+        try {
+          await fetch(GAS_API_URL, {
+            method: "POST",
+            mode: "no-cors",
+            headers: {
+              "Content-Type": "text/plain;charset=utf-8"
+            },
+            body: JSON.stringify(newResObj)
+          });
+
+          setReservations(prev => [newResObj, ...prev]);
+          showNotification("早自習預約新增成功！已同步至 Google 試算表。");
+          setShowMorningModal(false);
+        } catch (error) {
+          console.error("回存 GAS 失敗:", error);
+          showNotification("連線 Google 服務失敗，請檢查網路或稍後再試！", "error");
+        } finally {
+          setIsSubmitting(false);
+        }
       };
 
       const handleSubmit = async (e) => {
@@ -1806,12 +1854,12 @@
                                       key={res.id} 
                                       className={`${cardColor} rounded-lg p-2 shadow-sm hover:shadow transition relative group`}
                                     >
-                                      <div className="flex items-center justify-between font-bold text-slate-800 text-xs">
-                                        <span className="truncate pr-1">{res.teacher} 老師</span>
-                                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-normal flex-shrink-0">
-                                          {res.grade}
-                                        </span>
-                                      </div>
+                                      {/* 1. 若為非早自習時段，才顯示教師姓名 */}
+                                      {session.name !== "早自習" && (
+                                        <div className="flex items-center justify-between font-bold text-slate-800 text-xs mb-1">
+                                          <span className="truncate pr-1">{res.teacher} 老師</span>
+                                        </div>
+                                      )}
 
                                       {/* 浮窗 Pop-over (僅在管理員登錄後才顯示) */}
                                       {isAdmin && (
@@ -1829,7 +1877,14 @@
                                         </div>
                                       )}
 
+                                      {/* 2. 班級 (3個數字) 與 指派平板 同一行顯示 */}
                                       <div className="mt-1 flex items-center justify-between text-[11px] gap-1">
+                                      {/* 班級 */}
+                                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-bold flex-shrink-0 border border-slate-200/60">
+                                        {res.grade}
+                                      </span>
+
+                                      {/* 指派平板編號 */}
                                         {isUnassigned ? (
                                           <span className="bg-red-50 text-red-600 text-[10px] px-1.5 py-0.5 rounded font-medium border border-red-100 flex-1 truncate">
                                             ⚠️ 未指派平板
@@ -1839,10 +1894,12 @@
                                             🏷️ {res.tabletCode}
                                           </span>
                                         )}
+
+                                        {/* 管理員編輯按鈕 */}
                                         {isAdmin && (
                                           <button
                                             onClick={() => openTabletAssign(res)}
-                                            className={`p-1 rounded-lg transition ml-auto flex-shrink-0 mt-0.5 ${
+                                            className={`p-1 rounded-lg transition ml-auto flex-shrink-0 ${
                                               isUnassigned 
                                                 ? "bg-red-600 hover:bg-red-700 text-white animate-pulse" 
                                                 : "bg-indigo-600 hover:bg-indigo-700 text-white"
@@ -2216,6 +2273,97 @@
               </div>
             )}
           </main>
+
+          {/* Modal: 早自習快速新增彈窗 */}
+          {showMorningModal && (
+            <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+              <div className="bg-white rounded-2xl border border-slate-100 shadow-2xl max-w-md w-full overflow-hidden animate-scaleIn">
+                <div className="p-6 bg-purple-50 border-b border-purple-100 flex items-center justify-between">
+                  <h3 className="text-lg font-bold text-purple-900 flex items-center gap-2">
+                    <i data-lucide="plus-circle" className="text-purple-600"></i>
+                    新增早自習預約紀錄
+                  </h3>
+                  <button 
+                    onClick={() => setShowMorningModal(false)}
+                    className="p-1 rounded-lg text-slate-400 hover:bg-purple-100 hover:text-purple-700 transition"
+                  >
+                    <i data-lucide="x" className="w-5 h-5"></i>
+                  </button>
+                </div>
+                <form onSubmit={handleMorningSubmit} className="p-6 space-y-4">
+                  {/* 固定資訊預覽 */}
+                  <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs space-y-1.5 text-slate-600">
+                    <p><strong className="text-slate-700">電子郵件：</strong>Morning_study@ccjh.ntpc.edu.tw</p>
+                    <p><strong className="text-slate-700">教師姓名：</strong>早自習</p>
+                    <p><strong className="text-slate-700">用途：</strong>其他</p>
+                    <p><strong className="text-slate-700">借用日期：</strong><span className="font-mono font-bold text-purple-700">{morningModalData.date}</span></p>
+                    <p><strong className="text-slate-700">使用節次：</strong>早自習</p>
+                  </div>
+
+                  {/* 填寫欄位：年級班級 */}
+                  <div className="space-y-1.5">
+                    <label className="block text-sm font-bold text-slate-700">
+                      使用的年級班級
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="例如: 701、行政活動等（可留空，無格式限制）"
+                      value={morningModalData.grade}
+                      onChange={(e) => setMorningModalData(prev => ({ ...prev, grade: e.target.value }))}
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 text-sm"
+                    />
+                    <p className="text-[11px] text-slate-400">
+                      * 此欄位可為空，亦可輸入任意文字說明。
+                    </p>
+                  </div>
+
+                  {/* 填寫欄位：備註 */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-700">備註 (選填)</label>
+                      <span className="text-[10px] text-slate-400">{morningModalData.note.length} / 50 字</span>
+                    </div>
+                    <textarea
+                      maxLength="50"
+                      rows="2"
+                      placeholder="如有說明請在此填寫 (限 50 字內)"
+                      value={morningModalData.note}
+                      onChange={(e) => setMorningModalData(prev => ({ ...prev, note: e.target.value }))}
+                      className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"
+                    />
+                  </div>
+
+                  {/* 提交按鈕 */}
+                  <div className="pt-2 flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowMorningModal(false)}
+                      className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-50"
+                    >
+                      取消
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isSubmitting}
+                      className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold transition flex items-center gap-1.5 shadow-md"
+                    >
+                      {isSubmitting ? (
+                        <>
+                          <i data-lucide="loader-2" className="w-3.5 h-3.5 animate-spin"></i>
+                          處理中...
+                        </>
+                      ) : (
+                        <>
+                          <i data-lucide="check" className="w-3.5 h-3.5"></i>
+                          提交
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
 
           {/* Modal 1: Login */}
           {showLoginModal && (

@@ -55,16 +55,16 @@
     const { useState, useEffect, useMemo, useCallback } = React;
     const INITIAL_RESERVATIONS = [];
     const SESSIONS = [
-      { name: "早自習", time: "7:30-8:10", group: "morning", bg: "bg-purple-50", text: "text-purple-700", border: "border-purple-200", classId: "morning", reservable: false },
-      { name: "第一節", time: "8:15-9:00", group: "am", bg: "bg-blue-50/70", text: "text-blue-700", border: "border-blue-200", classId: "am", reservable: true },
-      { name: "第二節", time: "9:10-9:55", group: "am", bg: "bg-blue-50/70", text: "text-blue-700", border: "border-blue-200", classId: "am", reservable: true },
-      { name: "第三節", time: "10:05-10:50", group: "am", bg: "bg-blue-50/70", text: "text-blue-700", border: "border-blue-200", classId: "am", reservable: true },
-      { name: "第四節", time: "11:00-11:45", group: "am", bg: "bg-blue-50/70", text: "text-blue-700", border: "border-blue-200", classId: "am", reservable: true },
-      { name: "中午", time: "12:15-13:00", group: "noon", bg: "bg-amber-50/70", text: "text-amber-700", border: "border-amber-200", classId: "noon", reservable: true },
-      { name: "第五節", time: "13:05-13:50", group: "pm", bg: "bg-rose-50/70", text: "text-rose-700", border: "border-rose-200", classId: "pm", reservable: true },
-      { name: "第六節", time: "14:00-14:45", group: "pm", bg: "bg-rose-50/70", text: "text-rose-700", border: "border-rose-200", classId: "pm", reservable: true },
-      { name: "第七節", time: "15:00-15:45", group: "pm", bg: "bg-rose-50/70", text: "text-rose-700", border: "border-rose-200", classId: "pm", reservable: true },
-      { name: "第八節", time: "16:00-16:45", group: "evening", bg: "bg-emerald-50/70", text: "text-emerald-700", border: "border-emerald-200", classId: "evening", reservable: true }
+      { name: "早自習", time: "7:30-8:10", group: "morning", bg: "bg-purple-100", text: "text-purple-700", border: "border-purple-200", classId: "morning", reservable: false },
+      { name: "第一節", time: "8:15-9:00", group: "am", bg: "bg-blue-100", text: "text-blue-700", border: "border-blue-200", classId: "am", reservable: true },
+      { name: "第二節", time: "9:10-9:55", group: "am", bg: "bg-blue-100", text: "text-blue-700", border: "border-blue-200", classId: "am", reservable: true },
+      { name: "第三節", time: "10:05-10:50", group: "am", bg: "bg-blue-100", text: "text-blue-700", border: "border-blue-200", classId: "am", reservable: true },
+      { name: "第四節", time: "11:00-11:45", group: "am", bg: "bg-blue-100", text: "text-blue-700", border: "border-blue-200", classId: "am", reservable: true },
+      { name: "中午", time: "12:15-13:00", group: "noon", bg: "bg-amber-100", text: "text-amber-700", border: "border-amber-200", classId: "noon", reservable: true },
+      { name: "第五節", time: "13:05-13:50", group: "pm", bg: "bg-rose-100", text: "text-rose-700", border: "border-rose-200", classId: "pm", reservable: true },
+      { name: "第六節", time: "14:00-14:45", group: "pm", bg: "bg-rose-100", text: "text-rose-700", border: "border-rose-200", classId: "pm", reservable: true },
+      { name: "第七節", time: "15:00-15:45", group: "pm", bg: "bg-rose-100", text: "text-rose-700", border: "border-rose-200", classId: "pm", reservable: true },
+      { name: "第八節", time: "16:00-16:45", group: "evening", bg: "bg-emerald-100", text: "text-emerald-700", border: "border-emerald-200", classId: "evening", reservable: true }
     ];
     const PURPOSES = ["領域教學", "研習", "校定課程", "社團", "行政業務", "其他"];
     const WEEKDAYS_ZH = ["一", "二", "三", "四", "五", "六"];
@@ -1775,7 +1775,7 @@
                 
                 <div className="overflow-x-auto p-4 bg-slate-50/50">
                   <div 
-                    className="grid bg-slate-200 gap-[1px] border border-slate-200 rounded-xl overflow-hidden min-w-[950px]"
+                    className="grid bg-slate-400 gap-[2px] border border-slate-400 rounded-xl overflow-hidden min-w-[950px]"
                     style={{
                       gridTemplateColumns: '130px repeat(6, minmax(130px, 1fr))',
                       display: 'grid'
@@ -1792,7 +1792,7 @@
                         key={`day-header-${dIdx}`}
                         style={{ gridColumn: dIdx + 2, gridRow: 1 }} 
                         className={`p-3 text-center bg-slate-100 text-slate-700 font-bold border-b border-slate-200 select-none ${
-                          day.isToday ? "bg-amber-100/70 text-indigo-900" : ""
+                          day.isToday ? "bg-amber-200 text-indigo-900" : ""
                         }`}
                       >
                         <div className="flex flex-col items-center">
